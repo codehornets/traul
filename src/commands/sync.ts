@@ -1,9 +1,10 @@
 import type { TraulDB } from "../db/database";
 import type { TraulConfig } from "../lib/config";
 import { slackConnector } from "../connectors/slack";
+import { telegramConnector } from "../connectors/telegram";
 import * as log from "../lib/logger";
 
-const connectors = [slackConnector];
+const connectors = [slackConnector, telegramConnector];
 
 export async function runSync(
   db: TraulDB,

@@ -67,6 +67,12 @@ export function loadConfig(): TraulConfig {
   if (process.env.SLACK_BOT_TOKEN) {
     defaults.slack.token = process.env.SLACK_BOT_TOKEN;
   }
+  if (process.env.TELEGRAM_API_ID) {
+    defaults.telegram.api_id = process.env.TELEGRAM_API_ID;
+  }
+  if (process.env.TELEGRAM_API_HASH) {
+    defaults.telegram.api_hash = process.env.TELEGRAM_API_HASH;
+  }
 
   return defaults;
 }
