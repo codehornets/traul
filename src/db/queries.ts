@@ -116,6 +116,10 @@ export const GET_MESSAGES = `
   WHERE 1=1
 `;
 
+export const HAS_MESSAGE = `
+  SELECT 1 FROM messages WHERE source = ? AND source_id = ? LIMIT 1
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

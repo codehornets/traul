@@ -9,12 +9,17 @@ export const slackConnector: Connector = {
 
   async sync(db: TraulDB, config: TraulConfig): Promise<SyncResult> {
     if (!config.slack.token) {
-      throw new Error(
-        "Slack token not configured. Set SLACK_BOT_TOKEN or add slack.token to config."
-      );
+      log.warn("Slack token not configured.");
+      log.warn("Set SLACK_BOT_TOKEN or SLACK_USER_TOKEN env var, or add slack.token to ~/.config/traul/config.json");
+      log.warn("To extract tokens from Slack desktop app, run: /slack connect");
+      return { messagesAdded: 0, messagesUpdated: 0, contactsAdded: 0 };
     }
 
-    const client = new WebClient(config.slack.token);
+    const headers: Record<string, string> = {};
+    if (config.slack.token.startsWith("xoxc-") && config.slack.cookie) {
+      headers.cookie = `d=${config.slack.cookie}`;
+    }
+    const client = new WebClient(config.slack.token, { headers });
     const result: SyncResult = {
       messagesAdded: 0,
       messagesUpdated: 0,

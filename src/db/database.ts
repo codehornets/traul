@@ -102,6 +102,12 @@ export class TraulDB {
       .get(source, sourceUserId);
   }
 
+  hasMessage(source: string, sourceId: string): boolean {
+    return !!this.db
+      .query<{ "1": number }, [string, string]>(Q.HAS_MESSAGE)
+      .get(source, sourceId);
+  }
+
   getSyncCursor(source: string, key: string): string | null {
     const row = this.db
       .query<{ cursor_value: string }, [string, string]>(Q.GET_SYNC_CURSOR)

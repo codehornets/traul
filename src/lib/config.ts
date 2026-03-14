@@ -9,6 +9,7 @@ export interface TraulConfig {
   };
   slack: {
     token: string;
+    cookie: string;
     my_user_id: string;
     channels: string[];
   };
@@ -28,7 +29,7 @@ function getDefaultConfig(): TraulConfig {
   return {
     sync_start: "",
     database: { path: DEFAULT_DB_PATH },
-    slack: { token: "", my_user_id: "", channels: [] },
+    slack: { token: "", cookie: "", my_user_id: "", channels: [] },
     telegram: { api_id: "", api_hash: "", session_path: "", chats: [] },
   };
 }
@@ -43,6 +44,7 @@ export function loadConfig(): TraulConfig {
       defaults.sync_start = parsed.sync_start ?? defaults.sync_start;
       defaults.database.path = parsed.database?.path ?? defaults.database.path;
       defaults.slack.token = parsed.slack?.token ?? defaults.slack.token;
+      defaults.slack.cookie = parsed.slack?.cookie ?? defaults.slack.cookie;
       defaults.slack.my_user_id =
         parsed.slack?.my_user_id ?? defaults.slack.my_user_id;
       defaults.slack.channels =
@@ -64,8 +66,24 @@ export function loadConfig(): TraulConfig {
   if (process.env.TRAUL_DB_PATH) {
     defaults.database.path = process.env.TRAUL_DB_PATH;
   }
-  if (process.env.SLACK_BOT_TOKEN) {
-    defaults.slack.token = process.env.SLACK_BOT_TOKEN;
+  // Slack token: SLACK_TOKEN > SLACK_BOT_TOKEN > SLACK_USER_TOKEN > SLACK_TOKEN_*
+  defaults.slack.token =
+    process.env.SLACK_TOKEN ??
+    process.env.SLACK_BOT_TOKEN ??
+    process.env.SLACK_USER_TOKEN ??
+    defaults.slack.token;
+  defaults.slack.cookie = process.env.SLACK_COOKIE ?? defaults.slack.cookie;
+
+  // Fallback: pick up SLACK_TOKEN_<WORKSPACE> / SLACK_COOKIE_<WORKSPACE> from /slack skill
+  if (!defaults.slack.token) {
+    for (const [key, val] of Object.entries(process.env)) {
+      if (key.startsWith("SLACK_TOKEN_") && val) {
+        defaults.slack.token = val;
+        const suffix = key.replace("SLACK_TOKEN_", "");
+        defaults.slack.cookie = process.env[`SLACK_COOKIE_${suffix}`] ?? "";
+        break;
+      }
+    }
   }
   if (process.env.TELEGRAM_API_ID) {
     defaults.telegram.api_id = process.env.TELEGRAM_API_ID;

@@ -44,7 +44,7 @@ async function runTg(args: string[]): Promise<string> {
   return stdout.trim();
 }
 
-async function listChats(limit: number = 100): Promise<TgChat[]> {
+async function listChats(limit: number = 10000): Promise<TgChat[]> {
   const raw = await runTg(["list", "--limit", String(limit), "--json"]);
   if (!raw) return [];
   return JSON.parse(raw);
@@ -98,7 +98,8 @@ export const telegramConnector: Connector = {
         id: c,
       }));
     } else {
-      const allChats = await listChats(50);
+      // Fetch all chats — no artificial limit
+      const allChats = await listChats();
       chatsToSync = allChats.map((c) => ({
         name: c.name,
         id: String(c.id),
@@ -113,8 +114,7 @@ export const telegramConnector: Connector = {
 
     for (let i = 0; i < chatsToSync.length; i++) {
       const chat = chatsToSync[i];
-      const now = Date.now();
-      const elapsed = Math.round((now - syncStart) / 1000);
+      const elapsed = Math.round((Date.now() - syncStart) / 1000);
       log.info(`  [${i + 1}/${totalChats}] ${chat.name} (${elapsed}s elapsed)`);
       const cursorKey = `chat:${chat.id}`;
       const cursorValue = db.getSyncCursor("telegram", cursorKey);
@@ -158,6 +158,8 @@ export const telegramConnector: Connector = {
       }
 
       let chatMsgCount = 0;
+      let duplicateStreak = 0;
+      const DUPLICATE_THRESHOLD = 3; // stop after 3 consecutive known messages
       let latestDate = cursorValue ?? "";
 
       for (const msg of messages) {
@@ -168,6 +170,17 @@ export const telegramConnector: Connector = {
           : Math.floor(Date.now() / 1000);
 
         const sourceId = `${chat.id}:${msg.id}`;
+
+        // Check if we already have this message — if so, we've caught up
+        if (cursorValue && db.hasMessage("telegram", sourceId)) {
+          duplicateStreak++;
+          if (duplicateStreak >= DUPLICATE_THRESHOLD) {
+            log.info(`    caught up (hit ${DUPLICATE_THRESHOLD} known messages)`);
+            break;
+          }
+          continue;
+        }
+        duplicateStreak = 0;
 
         // Upsert contact
         if (msg.sender && !contactCache.has(msg.sender)) {
