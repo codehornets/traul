@@ -120,6 +120,35 @@ export const HAS_MESSAGE = `
   SELECT 1 FROM messages WHERE source = ? AND source_id = ? LIMIT 1
 `;
 
+export const INSERT_EMBEDDING = `
+  INSERT INTO vec_messages(message_id, embedding)
+  VALUES (?, ?)
+`;
+
+export const GET_UNEMBEDDED_MESSAGES = `
+  SELECT m.id, m.content
+  FROM messages m
+  LEFT JOIN vec_messages v ON v.message_id = m.id
+  WHERE v.message_id IS NULL AND m.content != ''
+  ORDER BY m.id
+  LIMIT ?
+`;
+
+export const VECTOR_SEARCH = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, m.content, m.sent_at, m.metadata,
+         v.distance
+  FROM vec_messages v
+  JOIN messages m ON m.id = v.message_id
+  WHERE v.embedding MATCH ? AND k = ?
+`;
+
+export const EMBEDDING_STATS = `
+  SELECT
+    (SELECT COUNT(*) FROM messages) AS total_messages,
+    (SELECT COUNT(*) FROM vec_messages) AS embedded_messages
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

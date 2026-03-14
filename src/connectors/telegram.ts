@@ -1,18 +1,10 @@
-import { homedir } from "os";
 import { join } from "path";
 import type { Connector, SyncResult } from "./types";
 import type { TraulDB } from "../db/database";
 import { type TraulConfig, getSyncStartTimestamp } from "../lib/config";
 import * as log from "../lib/logger";
 
-const TG_SCRIPT = join(
-  homedir(),
-  ".claude",
-  "skills",
-  "telegram-telethon",
-  "scripts",
-  "tg.py"
-);
+const TG_SCRIPT = join(import.meta.dir, "..", "..", "scripts", "tg_sync.py");
 
 interface TgMessage {
   id: number;
@@ -30,13 +22,52 @@ interface TgChat {
   unread: number;
 }
 
-async function runTg(args: string[]): Promise<string> {
+interface BulkChatSpec {
+  chat_id: string;
+  chat_name: string;
+  min_id: number;
+  limit: number;
+  offset_date?: string;
+}
+
+interface BulkChatResult {
+  chat_id: string;
+  chat_name?: string;
+  error?: string;
+  messages: TgMessage[];
+}
+
+async function runTg(args: string[], stdin?: string): Promise<string> {
   const proc = Bun.spawn(["python3", TG_SCRIPT, ...args], {
     stdout: "pipe",
     stderr: "pipe",
+    stdin: stdin ? new Blob([stdin]) : undefined,
   });
+
+  // Stream stderr to log for progress visibility
+  const stderrPromise = (async () => {
+    const reader = proc.stderr.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let fullStderr = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      fullStderr += chunk;
+      buf += chunk;
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim()) log.info(`  tg: ${line.trim()}`);
+      }
+    }
+    if (buf.trim()) log.info(`  tg: ${buf.trim()}`);
+    return fullStderr;
+  })();
+
   const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const stderr = await stderrPromise;
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
     throw new Error(`tg.py ${args[0]} failed (exit ${exitCode}): ${stderr}`);
@@ -50,34 +81,16 @@ async function listChats(limit: number = 10000): Promise<TgChat[]> {
   return JSON.parse(raw);
 }
 
-async function fetchMessages(
-  chat: string,
-  opts: { limit?: number; days?: number }
-): Promise<TgMessage[]> {
-  const args = [
-    "recent",
-    "--chat", chat,
-    "--limit", String(opts.limit ?? 500),
-    "--json",
-  ];
-  if (opts.days) {
-    args.push("--days", String(opts.days));
-  }
-  const raw = await runTg(args);
-  if (!raw) return [];
-  return JSON.parse(raw);
-}
-
 export const telegramConnector: Connector = {
   name: "telegram",
 
   async sync(db: TraulDB, config: TraulConfig): Promise<SyncResult> {
-    // Verify tg.py is accessible by checking status
+    // Verify tg.py is accessible
     try {
       await runTg(["status"]);
     } catch {
       throw new Error(
-        "Telegram not configured. Run: python3 ~/.claude/skills/telegram-telethon/scripts/tg.py setup"
+        `Telegram not configured. Run: python3 ${TG_SCRIPT} setup`
       );
     }
 
@@ -98,7 +111,7 @@ export const telegramConnector: Connector = {
         id: c,
       }));
     } else {
-      // Fetch all chats — no artificial limit
+      log.info("  Listing all Telegram chats...");
       const allChats = await listChats();
       chatsToSync = allChats.map((c) => ({
         name: c.name,
@@ -106,61 +119,114 @@ export const telegramConnector: Connector = {
       }));
     }
 
-    const totalChats = chatsToSync.length;
-    log.info(`Syncing ${totalChats} Telegram chats...`);
+    log.info(`  Found ${chatsToSync.length} chats`);
 
-    const contactCache = new Map<string, boolean>();
-    const syncStart = Date.now();
+    // Build bulk request — filter out recently synced chats
+    const bulkSpecs: BulkChatSpec[] = [];
+    const skipped: string[] = [];
 
-    for (let i = 0; i < chatsToSync.length; i++) {
-      const chat = chatsToSync[i];
-      const elapsed = Math.round((Date.now() - syncStart) / 1000);
-      log.info(`  [${i + 1}/${totalChats}] ${chat.name} (${elapsed}s elapsed)`);
-      const cursorKey = `chat:${chat.id}`;
-      const cursorValue = db.getSyncCursor("telegram", cursorKey);
-
-      // Skip chat if it was synced less than 1 hour ago
+    for (const chat of chatsToSync) {
       const lastSyncKey = `synced_at:${chat.id}`;
       const lastSyncValue = db.getSyncCursor("telegram", lastSyncKey);
       if (lastSyncValue) {
         const ageMs = Date.now() - parseInt(lastSyncValue);
         if (ageMs < 3600_000 && ageMs > 0) {
-          log.info(`    skipped (synced ${Math.round(ageMs / 60_000)}m ago)`);
+          skipped.push(chat.name);
           continue;
         }
       }
 
-      // Calculate days to fetch: from cursor or sync_start, default 7
-      let days: number | undefined;
-      const referenceTs = cursorValue
-        ? Math.floor(new Date(cursorValue).getTime() / 1000)
-        : syncStartTs !== "0" ? parseInt(syncStartTs) : undefined;
+      // Get last known message ID for this chat to use as min_id
+      const cursorKey = `msg_id:${chat.id}`;
+      const lastMsgId = db.getSyncCursor("telegram", cursorKey);
+      const minId = lastMsgId ? parseInt(lastMsgId) : 0;
 
-      if (referenceTs) {
-        const nowTs = Math.floor(Date.now() / 1000);
-        days = Math.ceil((nowTs - referenceTs) / 86400) + 1;
-      } else {
-        days = 7;
+      // Calculate offset_date for initial sync (default: 30 days)
+      let offsetDate: string | undefined;
+      if (minId === 0) {
+        const cursorDateKey = `chat:${chat.id}`;
+        const cursorValue = db.getSyncCursor("telegram", cursorDateKey);
+        const referenceTs = cursorValue
+          ? Math.floor(new Date(cursorValue).getTime() / 1000)
+          : syncStartTs !== "0" ? parseInt(syncStartTs)
+          : Math.floor((Date.now() - 30 * 86400_000) / 1000);
+
+        offsetDate = new Date(referenceTs * 1000).toISOString();
       }
 
-      let messages: TgMessage[];
-      const progressTimer = setInterval(() => {
-        const sec = Math.round((Date.now() - syncStart) / 1000);
-        log.info(`    ... still fetching ${chat.name} (${sec}s elapsed)`);
-      }, 10_000);
+      bulkSpecs.push({
+        chat_id: chat.id,
+        chat_name: chat.name,
+        min_id: minId,
+        limit: 500,
+        ...(offsetDate ? { offset_date: offsetDate } : {}),
+      });
+    }
+
+    if (skipped.length > 0) {
+      log.info(`  Skipped ${skipped.length} recently synced chats`);
+    }
+
+    if (bulkSpecs.length === 0) {
+      log.info("  No chats to sync");
+      return result;
+    }
+
+    log.info(`  Fetching ${bulkSpecs.length} chats in single session...`);
+    const syncStart = Date.now();
+
+    // Spawn bulk-recent process and stream JSONL — store each chat as it arrives
+    const proc = Bun.spawn(["python3", TG_SCRIPT, "bulk-recent", "--limit", "500"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: new Blob([JSON.stringify(bulkSpecs)]),
+    });
+
+    // Stream stderr for progress
+    const stderrDrain = (async () => {
+      const reader = proc.stderr.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.trim()) log.info(`  tg: ${line.trim()}`);
+        }
+      }
+      if (buf.trim()) log.info(`  tg: ${buf.trim()}`);
+    })();
+
+    // Stream stdout JSONL — process and store each chat immediately
+    const contactCache = new Map<string, boolean>();
+    const stdoutReader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    let stdoutBuf = "";
+
+    const processChatLine = (line: string) => {
+      let chatResult: BulkChatResult;
       try {
-        messages = await fetchMessages(chat.name, { limit: 500, days });
-      } catch (err) {
-        log.warn(`  Failed to fetch ${chat.name}: ${err}`);
-        continue;
-      } finally {
-        clearInterval(progressTimer);
+        chatResult = JSON.parse(line);
+      } catch {
+        log.warn(`  Failed to parse JSONL line: ${line.slice(0, 100)}`);
+        return;
       }
+
+      if (chatResult.error) {
+        log.warn(`  ${chatResult.chat_name || chatResult.chat_id}: ${chatResult.error}`);
+        return;
+      }
+
+      const chatId = chatResult.chat_id;
+      const chatName = chatResult.chat_name || chatId;
+      const messages = chatResult.messages || [];
 
       let chatMsgCount = 0;
-      let duplicateStreak = 0;
-      const DUPLICATE_THRESHOLD = 3; // stop after 3 consecutive known messages
-      let latestDate = cursorValue ?? "";
+      let maxMsgId = 0;
+      let latestDate = "";
 
       for (const msg of messages) {
         if (!msg.text) continue;
@@ -169,20 +235,10 @@ export const telegramConnector: Connector = {
           ? Math.floor(new Date(msg.date).getTime() / 1000)
           : Math.floor(Date.now() / 1000);
 
-        const sourceId = `${chat.id}:${msg.id}`;
+        const sourceId = `${chatId}:${msg.id}`;
 
-        // Check if we already have this message — if so, we've caught up
-        if (cursorValue && db.hasMessage("telegram", sourceId)) {
-          duplicateStreak++;
-          if (duplicateStreak >= DUPLICATE_THRESHOLD) {
-            log.info(`    caught up (hit ${DUPLICATE_THRESHOLD} known messages)`);
-            break;
-          }
-          continue;
-        }
-        duplicateStreak = 0;
+        if (msg.id > maxMsgId) maxMsgId = msg.id;
 
-        // Upsert contact
         if (msg.sender && !contactCache.has(msg.sender)) {
           const existing = db.getContactBySourceId("telegram", msg.sender);
           if (!existing) {
@@ -201,8 +257,8 @@ export const telegramConnector: Connector = {
         db.upsertMessage({
           source: "telegram",
           source_id: sourceId,
-          channel_id: chat.id,
-          channel_name: chat.name,
+          channel_id: chatId,
+          channel_name: chatName,
           author_id: msg.sender,
           author_name: msg.sender,
           content: msg.text,
@@ -218,14 +274,38 @@ export const telegramConnector: Connector = {
         }
       }
 
-      if (latestDate && latestDate !== (cursorValue ?? "")) {
-        db.setSyncCursor("telegram", cursorKey, latestDate);
+      // Update cursors immediately
+      if (maxMsgId > 0) {
+        db.setSyncCursor("telegram", `msg_id:${chatId}`, String(maxMsgId));
       }
-      db.setSyncCursor("telegram", lastSyncKey, String(Date.now()));
+      if (latestDate) {
+        db.setSyncCursor("telegram", `chat:${chatId}`, latestDate);
+      }
+      db.setSyncCursor("telegram", `synced_at:${chatId}`, String(Date.now()));
 
       result.messagesAdded += chatMsgCount;
-      log.info(`    ${chatMsgCount} messages`);
+      if (chatMsgCount > 0) {
+        log.info(`    ${chatName}: ${chatMsgCount} messages`);
+      }
+    };
+
+    while (true) {
+      const { done, value } = await stdoutReader.read();
+      if (done) break;
+      stdoutBuf += decoder.decode(value, { stream: true });
+      const lines = stdoutBuf.split("\n");
+      stdoutBuf = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim()) processChatLine(line.trim());
+      }
     }
+    if (stdoutBuf.trim()) processChatLine(stdoutBuf.trim());
+
+    await stderrDrain;
+    await proc.exited;
+
+    const elapsed = Math.round((Date.now() - syncStart) / 1000);
+    log.info(`  Sync completed in ${elapsed}s: ${result.messagesAdded} messages, ${result.contactsAdded} contacts`);
 
     return result;
   },

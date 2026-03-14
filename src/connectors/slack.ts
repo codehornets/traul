@@ -19,7 +19,11 @@ export const slackConnector: Connector = {
     if (config.slack.token.startsWith("xoxc-") && config.slack.cookie) {
       headers.cookie = `d=${config.slack.cookie}`;
     }
-    const client = new WebClient(config.slack.token, { headers });
+    const client = new WebClient(config.slack.token, {
+      headers,
+      retryConfig: { retries: 5, factor: 2 },
+      logLevel: 0, // suppress built-in rate limit warnings
+    });
     const result: SyncResult = {
       messagesAdded: 0,
       messagesUpdated: 0,

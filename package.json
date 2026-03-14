@@ -11,8 +11,11 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@slack/web-api": "^7.9.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.8.0",
     "commander": "^13.1.0",
-    "@slack/web-api": "^7.9.1"
+    "sqlite-vec": "^0.1.7-alpha.2"
   },
   "devDependencies": {
     "@types/bun": "latest"

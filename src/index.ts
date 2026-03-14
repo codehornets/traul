@@ -13,6 +13,7 @@ import {
 import { runBriefing } from "./commands/briefing";
 import { runMessages } from "./commands/messages";
 import { runChannels } from "./commands/channels";
+import { runEmbed } from "./commands/embed";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
@@ -50,8 +51,9 @@ program
   .option("-b, --before <date>", "messages before date (ISO 8601)")
   .option("-l, --limit <n>", "max results", "20")
   .option("--json", "output as JSON")
-  .action((query: string, options) => {
-    runSearch(db, query, options);
+  .option("--semantic", "use hybrid FTS + vector search (requires embeddings)")
+  .action(async (query: string, options) => {
+    await runSearch(db, query, options);
     db.close();
   });
 
@@ -106,6 +108,16 @@ program
   .option("--json", "output as JSON")
   .action((options) => {
     runChannels(db, options);
+    db.close();
+  });
+
+program
+  .command("embed")
+  .description("Generate vector embeddings for messages (requires Ollama)")
+  .option("-l, --limit <n>", "max messages to embed per run", "500")
+  .option("-q, --quiet", "minimal output")
+  .action(async (options) => {
+    await runEmbed(db, options);
     db.close();
   });
 

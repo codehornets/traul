@@ -1,4 +1,13 @@
 import { Database } from "bun:sqlite";
+import * as sqliteVec from "sqlite-vec";
+import { EMBED_DIMS } from "../lib/embeddings";
+
+// macOS ships Apple's SQLite which doesn't support extensions.
+// Use Homebrew's vanilla SQLite instead.
+if (process.platform === "darwin") {
+  const HOMEBREW_SQLITE = "/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib";
+  Database.setCustomSQLite(HOMEBREW_SQLITE);
+}
 
 const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS messages (
@@ -105,9 +114,13 @@ const SCHEMA_SQL = `
 
 export function initializeDatabase(path: string): Database {
   const db = new Database(path, { create: true });
+  sqliteVec.load(db);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA_SQL);
+  db.exec(
+    `CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(message_id INTEGER PRIMARY KEY, embedding float[${EMBED_DIMS}])`
+  );
   return db;
 }
 

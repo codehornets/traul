@@ -28,6 +28,11 @@ export interface SignalResultRow {
   sent_at: number | null;
 }
 
+export interface EmbeddingStats {
+  total_messages: number;
+  embedded_messages: number;
+}
+
 export interface Stats {
   total_messages: number;
   total_channels: number;
@@ -284,6 +289,101 @@ export class TraulDB {
     return this.db
       .query<{ source: string; channel_name: string; msg_count: number; last_message: number }, (string | number)[]>(sql)
       .all(...params);
+  }
+
+  insertEmbedding(messageId: number, embedding: Uint8Array): void {
+    this.db.run(Q.INSERT_EMBEDDING, [messageId, embedding]);
+  }
+
+  getUnembeddedMessages(limit: number = 100): Array<{ id: number; content: string }> {
+    return this.db
+      .query<{ id: number; content: string }, [number]>(Q.GET_UNEMBEDDED_MESSAGES)
+      .all(limit);
+  }
+
+  vectorSearch(
+    embedding: Uint8Array,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const k = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (Uint8Array | string | number)[] = [embedding, k];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name = ?");
+      params.push(options.channel);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.VECTOR_SEARCH;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+
+    return this.db.query<MessageRow, (Uint8Array | string | number)[]>(sql).all(...params);
+  }
+
+  hybridSearch(
+    query: string,
+    embedding: Uint8Array,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const k = limit * 3; // oversample for RRF merging
+
+    const ftsResults = this.searchMessages(query, { ...options, limit: k });
+    const vecResults = this.vectorSearch(embedding, { ...options, limit: k });
+
+    // Reciprocal Rank Fusion
+    const RRF_K = 60;
+    const scores = new Map<number, { score: number; msg: MessageRow }>();
+
+    ftsResults.forEach((msg, i) => {
+      const rrf = 1.0 / (RRF_K + i + 1);
+      scores.set(msg.id, { score: rrf, msg });
+    });
+
+    vecResults.forEach((msg, i) => {
+      const rrf = 1.0 / (RRF_K + i + 1);
+      const existing = scores.get(msg.id);
+      if (existing) {
+        existing.score += rrf;
+      } else {
+        scores.set(msg.id, { score: rrf, msg });
+      }
+    });
+
+    return [...scores.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((s) => s.msg);
+  }
+
+  getEmbeddingStats(): EmbeddingStats {
+    return this.db.query<EmbeddingStats, []>(Q.EMBEDDING_STATS).get()!;
   }
 
   getMessageVolume(days: number = 7): Array<{ day: string; count: number }> {
