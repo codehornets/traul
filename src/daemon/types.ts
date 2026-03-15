@@ -5,6 +5,7 @@ export interface DaemonIntervals {
   linear: number;
   "claude-code": number;
   gmail: number;
+  discord: number;
   markdown: number;
   embed: number;
 }
@@ -39,6 +40,7 @@ export const DEFAULT_INTERVALS: DaemonIntervals = {
   linear: 600,
   "claude-code": 600,
   gmail: 600,
+  discord: 300,
   markdown: 600,
   embed: 300,
 };
@@ -51,6 +53,7 @@ export const SOURCE_PRIORITY: Array<keyof DaemonIntervals> = [
   "linear",
   "claude-code",
   "gmail",
+  "discord",
   "markdown",
   "embed",
 ];
