@@ -386,6 +386,17 @@ export class TraulDB {
     return this.db.query<ChunkEmbeddingStats, []>(Q.CHUNK_EMBEDDING_STATS).get()!;
   }
 
+  resetEmbeddings(dims: number): void {
+    this.db.run("DROP TABLE IF EXISTS vec_messages");
+    this.db.run("DROP TABLE IF EXISTS vec_chunks");
+    this.db.exec(
+      `CREATE VIRTUAL TABLE vec_messages USING vec0(message_id INTEGER PRIMARY KEY, embedding float[${dims}])`
+    );
+    this.db.exec(
+      `CREATE VIRTUAL TABLE vec_chunks USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[${dims}])`
+    );
+  }
+
   searchChunks(
     query: string,
     options?: {
@@ -464,6 +475,41 @@ export class TraulDB {
     }
 
     return this.db.query<MessageRow, (Uint8Array | string | number)[]>(sql).all(...params);
+  }
+
+  getDetailedStats(): {
+    db_size: number;
+    total_messages: number;
+    total_channels: number;
+    total_contacts: number;
+    embedded_messages: number;
+    total_chunks: number;
+    embedded_chunks: number;
+    channels: Array<{ source: string; channel_name: string; msg_count: number }>;
+  } {
+    const channels = this.db
+      .query<{ source: string; channel_name: string; msg_count: number }, []>(Q.GET_DETAILED_STATS)
+      .all();
+    const stats = this.getStats();
+    const embStats = this.getEmbeddingStats();
+    const chunkStats = this.getChunkEmbeddingStats();
+
+    // Get DB file size
+    const sizeRow = this.db
+      .query<{ page_count: number; page_size: number }, []>(
+        "SELECT (SELECT page_count FROM pragma_page_count) AS page_count, (SELECT page_size FROM pragma_page_size) AS page_size"
+      )
+      .get()!;
+    const db_size = sizeRow.page_count * sizeRow.page_size;
+
+    return {
+      db_size,
+      ...stats,
+      embedded_messages: embStats.embedded_messages,
+      total_chunks: chunkStats.total_chunks,
+      embedded_chunks: chunkStats.embedded_chunks,
+      channels,
+    };
   }
 
   close(): void {

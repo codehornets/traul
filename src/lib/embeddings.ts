@@ -1,11 +1,11 @@
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const EMBED_MODEL = process.env.TRAUL_EMBED_MODEL ?? "nomic-embed-text";
-const EMBED_DIMS = 768;
+const EMBED_MODEL = process.env.TRAUL_EMBED_MODEL ?? "snowflake-arctic-embed2";
+const EMBED_DIMS = 1024;
 const BATCH_SIZE = 50;
 
 export { EMBED_DIMS };
 
-// nomic-embed-text architecture context is 2048 tokens.
+// snowflake-arctic-embed2 context is 8192 tokens.
 // Non-Latin (Cyrillic, CJK) text uses ~2-4 tokens per char.
 // Start with full text, retry with shorter input on context overflow.
 const TRUNCATE_STEPS = [undefined, 4000, 2000, 1000];

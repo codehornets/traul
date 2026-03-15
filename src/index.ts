@@ -8,6 +8,7 @@ import { runSearch } from "./commands/search";
 import { runMessages } from "./commands/messages";
 import { runChannels } from "./commands/channels";
 import { runEmbed } from "./commands/embed";
+import { runStats } from "./commands/stats";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
@@ -85,12 +86,36 @@ program
   });
 
 program
+  .command("stats")
+  .description("Show database statistics")
+  .option("--json", "output as JSON")
+  .action((options) => {
+    runStats(db, options);
+    db.close();
+  });
+
+program
   .command("embed")
   .description("Generate vector embeddings for messages (requires Ollama)")
   .option("-l, --limit <n>", "max messages to embed per run", "500")
   .option("-q, --quiet", "minimal output")
   .action(async (options) => {
     await runEmbed(db, options);
+    db.close();
+  });
+
+program
+  .command("re-embed")
+  .description("Drop all embeddings, recreate vec tables with current dimensions, and re-embed everything")
+  .option("-l, --limit <n>", "max items to embed per run (0 = all)", "0")
+  .option("-q, --quiet", "minimal output")
+  .action(async (options) => {
+    const { EMBED_DIMS } = await import("./lib/embeddings");
+    console.log(`Resetting vec tables to ${EMBED_DIMS} dimensions...`);
+    db.resetEmbeddings(EMBED_DIMS);
+    console.log("Vec tables reset. Starting re-embedding...");
+    const limit = options.limit === "0" ? "999999" : options.limit;
+    await runEmbed(db, { limit, quiet: options.quiet });
     db.close();
   });
 
