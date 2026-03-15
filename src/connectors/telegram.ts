@@ -20,6 +20,7 @@ interface TgChat {
   id: number;
   type: string;
   unread: number;
+  last_message_date: string | null;
 }
 
 interface BulkChatSpec {
@@ -75,8 +76,10 @@ async function runTg(args: string[], stdin?: string): Promise<string> {
   return stdout.trim();
 }
 
-async function listChats(limit: number = 10000): Promise<TgChat[]> {
-  const raw = await runTg(["list", "--limit", String(limit), "--json"]);
+async function listChats(limit: number = 10000, since?: string): Promise<TgChat[]> {
+  const args = ["list", "--limit", String(limit), "--json"];
+  if (since) args.push("--since", since);
+  const raw = await runTg(args);
   if (!raw) return [];
   return JSON.parse(raw);
 }
@@ -103,19 +106,25 @@ export const telegramConnector: Connector = {
     const syncStartTs = getSyncStartTimestamp(config);
 
     // Determine which chats to sync
-    let chatsToSync: Array<{ name: string; id: string }> = [];
+    let chatsToSync: Array<{ name: string; id: string; lastMessageDate: string | null }> = [];
 
     if (config.telegram.chats.length > 0) {
       chatsToSync = config.telegram.chats.map((c) => ({
         name: c,
         id: c,
+        lastMessageDate: null,
       }));
     } else {
       log.info("  Listing all Telegram chats...");
-      const allChats = await listChats();
+      const lastGlobalSync = db.getSyncCursor("telegram", "last_sync");
+      const since = lastGlobalSync
+        ? new Date(parseInt(lastGlobalSync)).toISOString()
+        : undefined;
+      const allChats = await listChats(10000, since);
       chatsToSync = allChats.map((c) => ({
         name: c.name,
         id: String(c.id),
+        lastMessageDate: c.last_message_date,
       }));
     }
 
@@ -126,11 +135,13 @@ export const telegramConnector: Connector = {
     const skipped: string[] = [];
 
     for (const chat of chatsToSync) {
+      // Skip chats where last message is older than our last sync
       const lastSyncKey = `synced_at:${chat.id}`;
       const lastSyncValue = db.getSyncCursor("telegram", lastSyncKey);
-      if (lastSyncValue) {
-        const ageMs = Date.now() - parseInt(lastSyncValue);
-        if (ageMs < 3600_000 && ageMs > 0) {
+      if (lastSyncValue && chat.lastMessageDate) {
+        const lastSyncMs = parseInt(lastSyncValue);
+        const lastMsgMs = new Date(chat.lastMessageDate).getTime();
+        if (lastMsgMs < lastSyncMs) {
           skipped.push(chat.name);
           continue;
         }
@@ -170,6 +181,12 @@ export const telegramConnector: Connector = {
     if (bulkSpecs.length === 0) {
       log.info("  No chats to sync");
       return result;
+    }
+
+    // Map resolved chat IDs back to spec IDs for consistent cursor keys
+    const specIdByName = new Map<string, string>();
+    for (const spec of bulkSpecs) {
+      specIdByName.set(spec.chat_name, spec.chat_id);
     }
 
     log.info(`  Fetching ${bulkSpecs.length} chats in single session...`);
@@ -274,14 +291,15 @@ export const telegramConnector: Connector = {
         }
       }
 
-      // Update cursors immediately
+      // Update cursors using the original spec ID so lookups match on next sync
+      const cursorId = specIdByName.get(chatName) ?? chatId;
       if (maxMsgId > 0) {
-        db.setSyncCursor("telegram", `msg_id:${chatId}`, String(maxMsgId));
+        db.setSyncCursor("telegram", `msg_id:${cursorId}`, String(maxMsgId));
       }
       if (latestDate) {
-        db.setSyncCursor("telegram", `chat:${chatId}`, latestDate);
+        db.setSyncCursor("telegram", `chat:${cursorId}`, latestDate);
       }
-      db.setSyncCursor("telegram", `synced_at:${chatId}`, String(Date.now()));
+      db.setSyncCursor("telegram", `synced_at:${cursorId}`, String(Date.now()));
 
       result.messagesAdded += chatMsgCount;
       if (chatMsgCount > 0) {
@@ -306,6 +324,9 @@ export const telegramConnector: Connector = {
 
     const elapsed = Math.round((Date.now() - syncStart) / 1000);
     log.info(`  Sync completed in ${elapsed}s: ${result.messagesAdded} messages, ${result.contactsAdded} contacts`);
+
+    // Save global sync timestamp so next run can skip old dialogs
+    db.setSyncCursor("telegram", "last_sync", String(syncStart));
 
     return result;
   },

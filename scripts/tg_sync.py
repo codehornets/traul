@@ -148,11 +148,15 @@ async def cmd_bulk(chats_spec: list, default_limit: int):
         await client.disconnect()
 
 
-async def cmd_list(limit: int):
+async def cmd_list(limit: int, since: str = None):
     config = load_config()
     session_path = str(CONFIG_DIR / "session")
     client = TelegramClient(session_path, config["api_id"], config["api_hash"])
     await client.start()
+
+    cutoff = None
+    if since:
+        cutoff = datetime.fromisoformat(since.replace("Z", "+00:00"))
 
     try:
         sys.stderr.write(f"Fetching dialogs...\n")
@@ -161,6 +165,10 @@ async def cmd_list(limit: int):
         count = 0
         async for d in client.iter_dialogs(limit=limit):
             count += 1
+            if cutoff and d.date and d.date < cutoff:
+                sys.stderr.write(f"  Stopped at {count} dialogs (reached cutoff {since})\n")
+                sys.stderr.flush()
+                break
             if count % 100 == 0:
                 sys.stderr.write(f"  {count} dialogs...\n")
                 sys.stderr.flush()
@@ -169,6 +177,7 @@ async def cmd_list(limit: int):
                 "name": d.name or "Unnamed",
                 "type": get_chat_type(d.entity),
                 "unread": d.unread_count,
+                "last_message_date": d.date.isoformat() if d.date else None,
             })
         sys.stderr.write(f"Got {len(chats)} dialogs\n")
         sys.stderr.flush()
@@ -199,6 +208,7 @@ def main():
     list_p = sub.add_parser("list", help="List chats")
     list_p.add_argument("--limit", type=int, default=10000)
     list_p.add_argument("--json", action="store_true")
+    list_p.add_argument("--since", type=str, default=None, help="ISO date cutoff — stop listing chats older than this")
 
     bulk_p = sub.add_parser("bulk-recent", help="Bulk fetch (JSON stdin)")
     bulk_p.add_argument("--limit", type=int, default=500)
@@ -208,7 +218,7 @@ def main():
     if args.command == "status":
         asyncio.run(cmd_status())
     elif args.command == "list":
-        asyncio.run(cmd_list(args.limit))
+        asyncio.run(cmd_list(args.limit, args.since))
     elif args.command == "bulk-recent":
         input_data = sys.stdin.read()
         chats = json.loads(input_data)
