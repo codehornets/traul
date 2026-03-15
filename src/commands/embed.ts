@@ -96,7 +96,7 @@ async function embedItems(
 
 export async function runEmbed(
   db: TraulDB,
-  options: { limit?: string; quiet?: boolean }
+  options: { limit?: string; quiet?: boolean; onProgress?: (pct: number, eta: string | null) => void }
 ): Promise<void> {
   const parsed = options.limit ? parseInt(options.limit, 10) : 500;
   const batchLimit = parsed === 0 ? 999999 : parsed;
@@ -116,6 +116,22 @@ export async function runEmbed(
 
   // Embed messages — chunk long ones on the fly before each batch
   const messages = db.getUnembeddedMessages(batchLimit);
+  // Pre-fetch chunk count for unified progress tracking
+  const existingChunks = db.getUnembeddedChunks(batchLimit);
+  const totalItems = messages.length + existingChunks.length;
+  let doneTotal = 0;
+  const embedStart = Date.now();
+
+  function reportProgress() {
+    if (!options.onProgress || totalItems === 0) return;
+    const pct = Math.round((doneTotal / totalItems) * 100);
+    const elapsed = Date.now() - embedStart;
+    const msPerItem = elapsed / (doneTotal || 1);
+    const remaining = totalItems - doneTotal;
+    const etaMs = Date.now() + msPerItem * remaining;
+    options.onProgress(pct, new Date(etaMs).toISOString());
+  }
+
   if (messages.length > 0) {
     const r = await embedItems(
       messages,
@@ -127,6 +143,8 @@ export async function runEmbed(
         db.replaceChunks(id, chunks);
       },
     );
+    doneTotal += r.done + r.failed;
+    reportProgress();
     if (!options.quiet) {
       console.log(`Messages: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);
     }
@@ -134,7 +152,7 @@ export async function runEmbed(
     console.log("All messages already embedded.");
   }
 
-  // Embed chunks
+  // Embed chunks (re-fetch since chunking during messages phase may have created new ones)
   const chunks = db.getUnembeddedChunks(batchLimit);
   if (chunks.length > 0) {
     const r = await embedItems(
@@ -143,6 +161,8 @@ export async function runEmbed(
       "chunks",
       !!options.quiet
     );
+    doneTotal += r.done + r.failed;
+    reportProgress();
     if (!options.quiet) {
       console.log(`Chunks: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);
     }

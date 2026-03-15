@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { DEFAULT_INTERVALS, DEFAULT_PORT, type DaemonConfig, type DaemonIntervals } from "../daemon/types";
 
 export interface TraulConfig {
   sync_start: string;
@@ -42,6 +43,7 @@ export interface TraulConfig {
       chats: string[];
     }>;
   };
+  daemon: DaemonConfig;
 }
 
 const CONFIG_DIR = join(homedir(), ".config", "traul");
@@ -58,16 +60,18 @@ function getDefaultConfig(): TraulConfig {
     markdown: { dirs: [] },
     gmail: { client_id: "", client_secret: "", refresh_token: "", accounts: [] },
     whatsapp: { instances: [] },
+    daemon: { port: DEFAULT_PORT, intervals: { ...DEFAULT_INTERVALS } },
   };
 }
 
 export function loadConfig(): TraulConfig {
   const defaults = getDefaultConfig();
 
+  let parsed: any = {};
   if (existsSync(CONFIG_PATH)) {
     try {
       const raw = readFileSync(CONFIG_PATH, "utf-8");
-      const parsed = JSON.parse(raw);
+      parsed = JSON.parse(raw);
       defaults.sync_start = parsed.sync_start ?? defaults.sync_start;
       defaults.database.path = parsed.database?.path ?? defaults.database.path;
       defaults.slack.token = parsed.slack?.token ?? defaults.slack.token;
@@ -103,6 +107,7 @@ export function loadConfig(): TraulConfig {
       // ignore malformed config, use defaults
     }
   }
+  defaults.daemon = loadDaemonConfig(parsed);
 
   // Env var overrides
   if (process.env.TRAUL_DB_PATH) {
@@ -187,4 +192,22 @@ export function saveDefaultConfig(): void {
     mkdirSync(CONFIG_DIR, { recursive: true });
     writeFileSync(CONFIG_PATH, JSON.stringify(getDefaultConfig(), null, 2));
   }
+}
+
+export function loadDaemonConfig(parsed: Record<string, any>): DaemonConfig {
+  const daemon = parsed?.daemon ?? {};
+  const intervals: DaemonIntervals = { ...DEFAULT_INTERVALS };
+
+  if (daemon.intervals) {
+    for (const key of Object.keys(DEFAULT_INTERVALS) as Array<keyof DaemonIntervals>) {
+      if (typeof daemon.intervals[key] === "number") {
+        intervals[key] = daemon.intervals[key];
+      }
+    }
+  }
+
+  return {
+    port: typeof daemon.port === "number" ? daemon.port : DEFAULT_PORT,
+    intervals,
+  };
 }
