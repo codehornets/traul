@@ -10,6 +10,7 @@ import { runChannels } from "./commands/channels";
 import { runEmbed } from "./commands/embed";
 import { runStats } from "./commands/stats";
 import { runWhatsAppAuth } from "./commands/whatsapp-auth";
+import { runDaemonStart, runDaemonStop, runDaemonStatus } from "./commands/daemon";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
@@ -126,6 +127,33 @@ whatsapp
   .argument("<account>", "account name matching config instance name")
   .action(async (account: string) => {
     await runWhatsAppAuth(config, account);
+    process.exit(0);
+  });
+
+const daemon = program
+  .command("daemon")
+  .description("Background sync daemon");
+
+daemon
+  .command("start", { isDefault: true })
+  .description("Start the daemon (foreground by default)")
+  .option("--detach", "run in background")
+  .action(async (options) => {
+    await runDaemonStart(db, config, options);
+  });
+
+daemon
+  .command("stop")
+  .description("Stop the running daemon")
+  .action(() => {
+    runDaemonStop();
+  });
+
+daemon
+  .command("status")
+  .description("Check daemon status")
+  .action(async () => {
+    await runDaemonStatus(config);
     process.exit(0);
   });
 
