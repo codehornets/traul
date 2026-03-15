@@ -23,6 +23,7 @@ discord: {
 - Token sourced from `DISCORD_TOKEN` env var, fallback to `discord.token` in config file
 - Allowlist and stoplist coexist: allowlist narrows first, stoplist removes from the result
 - DMs/group DMs are not affected by server filters, only by channel filters
+- Note: if `channels.allowlist` is set for specific server channels, DMs are excluded unless their IDs are also in the allowlist. To sync everything except specific channels, use `channels.stoplist` instead
 
 ## API & Auth
 
@@ -32,7 +33,8 @@ discord: {
 - `GET /api/v9/guilds/{id}/channels` — list channels in a server
 - `GET /api/v9/users/@me/channels` — list DMs and group DMs
 - `GET /api/v9/channels/{id}/messages?limit=100` — fetch message history (cursor via `before`/`after`)
-- `GET /api/v9/channels/{id}/threads/archived/public` — list archived threads
+- `GET /api/v9/channels/{id}/threads/archived/public` — list archived public threads
+- `GET /api/v9/channels/{id}/threads/archived/private` — list archived private threads
 
 **Auth:** `Authorization: {token}` header (no "Bot " prefix).
 
@@ -44,7 +46,7 @@ Dual strategy — dynamic headers with a minimum floor delay:
 
 1. Parse `X-RateLimit-Remaining` and `X-RateLimit-Reset-After` from every response
 2. When `Remaining` hits 0, sleep for `Reset-After` seconds
-3. On 429 response, read `Retry-After` header and wait, then retry the same request
+3. On 429 response, read `Retry-After` header and wait, then retry the same request (max 5 retries per request, then fail)
 4. Minimum floor delay of 100ms between all requests regardless of rate limit state
 
 ## Sync Flow
@@ -107,7 +109,7 @@ Create/link contacts from `message.author` using the same pattern as Slack's `re
 
 Threads in Discord are channels with a `parent_id`. During sync:
 - Active threads are listed via guild channel listing (type 11 = public thread, type 12 = private thread)
-- Archived threads fetched via `/channels/{parent_id}/threads/archived/public`
+- Archived threads fetched via `/channels/{parent_id}/threads/archived/public` and `/threads/archived/private`
 - Thread messages stored with `thread_id` = thread's parent message ID (the message that started the thread)
 - Thread channel name follows parent: `ServerName/channel-name` (thread messages distinguished by `thread_id`)
 
