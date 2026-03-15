@@ -1,5 +1,5 @@
 import type { TraulDB } from "../db/database";
-import { embed, vecToBytes } from "../lib/embeddings";
+import { embedBatch, vecToBytes, BATCH_SIZE } from "../lib/embeddings";
 
 function formatDuration(ms: number): string {
   const secs = Math.floor(ms / 1000);
@@ -26,20 +26,23 @@ async function embedItems(
     console.log(`Embedding ${items.length} ${label}...`);
   }
 
-  for (const item of items) {
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
+    const batch = items.slice(i, i + BATCH_SIZE);
     try {
-      const vec = await embed(item.content);
-      insertFn(item.id, vecToBytes(vec));
-      done++;
+      const vecs = await embedBatch(batch.map((item) => item.content));
+      for (let j = 0; j < batch.length; j++) {
+        insertFn(batch[j].id, vecToBytes(vecs[j]));
+        done++;
+      }
     } catch (err) {
-      failed++;
+      failed += batch.length;
       if (!quiet) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`\n  ! ${label} ${item.id}: ${errMsg}\n`);
+        process.stderr.write(`\n  ! ${label} batch at ${i}: ${errMsg}\n`);
       }
     }
 
-    if (!quiet && (done + failed) % 25 === 0) {
+    if (!quiet) {
       const elapsed = Date.now() - startTime;
       const processed = done + failed;
       const msPerMsg = elapsed / processed;
@@ -63,7 +66,8 @@ export async function runEmbed(
   db: TraulDB,
   options: { limit?: string; quiet?: boolean }
 ): Promise<void> {
-  const batchLimit = options.limit ? parseInt(options.limit, 10) : 500;
+  const parsed = options.limit ? parseInt(options.limit, 10) : 500;
+  const batchLimit = parsed === 0 ? 999999 : parsed;
 
   const orphaned = db.deleteOrphanedEmbeddings();
   const orphanedChunks = db.deleteOrphanedChunkEmbeddings();

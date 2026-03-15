@@ -97,7 +97,7 @@ program
 program
   .command("embed")
   .description("Generate vector embeddings for messages (requires Ollama)")
-  .option("-l, --limit <n>", "max messages to embed per run", "500")
+  .option("-l, --limit <n>", "max messages to embed per run (0 = all)", "500")
   .option("-q, --quiet", "minimal output")
   .action(async (options) => {
     await runEmbed(db, options);
@@ -105,17 +105,13 @@ program
   });
 
 program
-  .command("re-embed")
-  .description("Drop all embeddings, recreate vec tables with current dimensions, and re-embed everything")
-  .option("-l, --limit <n>", "max items to embed per run (0 = all)", "0")
-  .option("-q, --quiet", "minimal output")
-  .action(async (options) => {
+  .command("reset-embed")
+  .description("Drop all embeddings and recreate vec tables (run 'embed' after to regenerate)")
+  .action(async () => {
     const { EMBED_DIMS } = await import("./lib/embeddings");
     console.log(`Resetting vec tables to ${EMBED_DIMS} dimensions...`);
     db.resetEmbeddings(EMBED_DIMS);
-    console.log("Vec tables reset. Starting re-embedding...");
-    const limit = options.limit === "0" ? "999999" : options.limit;
-    await runEmbed(db, { limit, quiet: options.quiet });
+    console.log("Done. Run 'traul embed' to regenerate embeddings.");
     db.close();
   });
 

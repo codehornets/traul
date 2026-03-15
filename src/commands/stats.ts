@@ -1,4 +1,5 @@
 import type { TraulDB } from "../db/database";
+import { EMBED_MODEL, EMBED_DIMS } from "../lib/embeddings";
 
 export function runStats(db: TraulDB, options: { json?: boolean }): void {
   const stats = db.getDetailedStats();
@@ -13,6 +14,7 @@ export function runStats(db: TraulDB, options: { json?: boolean }): void {
   console.log(`Channels:           ${stats.total_channels}`);
   console.log(`Contacts:           ${stats.total_contacts}`);
   console.log(`Chunks:             ${stats.total_chunks}`);
+  console.log(`Embed model:        ${EMBED_MODEL} (${EMBED_DIMS}d)`);
   console.log(`Msg embeddings:     ${stats.embedded_messages} / ${stats.total_messages}`);
   console.log(`Chunk embeddings:   ${stats.embedded_chunks} / ${stats.total_chunks}`);
 }
