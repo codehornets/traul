@@ -165,7 +165,11 @@ export function loadConfig(): TraulConfig {
 }
 
 export function getSyncStartTimestamp(config: TraulConfig): string {
-  if (!config.sync_start) return "0";
+  if (!config.sync_start) {
+    // Default: 30 days ago
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return String(Math.floor(thirtyDaysAgo / 1000));
+  }
   const ts = Math.floor(new Date(config.sync_start).getTime() / 1000);
   if (isNaN(ts)) return "0";
   return String(ts);
