@@ -17,6 +17,12 @@ export async function runEmbed(
   options: { limit?: string; quiet?: boolean }
 ): Promise<void> {
   const batchLimit = options.limit ? parseInt(options.limit, 10) : 500;
+
+  const orphaned = db.deleteOrphanedEmbeddings();
+  if (orphaned > 0 && !options.quiet) {
+    console.log(`Cleaned ${orphaned} orphaned embeddings.`);
+  }
+
   const stats = db.getEmbeddingStats();
 
   if (!options.quiet) {

@@ -149,6 +149,11 @@ export const EMBEDDING_STATS = `
     (SELECT COUNT(*) FROM vec_messages) AS embedded_messages
 `;
 
+export const DELETE_ORPHANED_EMBEDDINGS = `
+  DELETE FROM vec_messages
+  WHERE message_id NOT IN (SELECT id FROM messages)
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

@@ -386,6 +386,10 @@ export class TraulDB {
     return this.db.query<EmbeddingStats, []>(Q.EMBEDDING_STATS).get()!;
   }
 
+  deleteOrphanedEmbeddings(): number {
+    return this.db.run(Q.DELETE_ORPHANED_EMBEDDINGS).changes;
+  }
+
   getMessageVolume(days: number = 7): Array<{ day: string; count: number }> {
     return this.db
       .query<{ day: string; count: number }, [number]>(Q.GET_MESSAGE_VOLUME)
