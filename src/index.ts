@@ -43,15 +43,20 @@ program
 
 program
   .command("search")
-  .description("Search messages using full-text search")
-  .argument("<query>", "search query")
+  .description(
+    "Search messages (hybrid vector+keyword by default, requires Ollama)"
+  )
+  .argument("<query>", "search query (natural language or keywords)")
   .option("-s, --source <source>", "filter by source")
   .option("-c, --channel <channel>", "filter by channel name")
   .option("-a, --after <date>", "messages after date (ISO 8601)")
   .option("-b, --before <date>", "messages before date (ISO 8601)")
   .option("-l, --limit <n>", "max results", "20")
   .option("--json", "output as JSON")
-  .option("--fts", "keyword-only search (skip vector search)")
+  .option(
+    "--fts",
+    "keyword-only search (FTS5/BM25, no vector search). Faster but requires all terms to match — use hybrid for multi-word or exploratory queries"
+  )
   .action(async (query: string, options) => {
     await runSearch(db, query, options);
     db.close();

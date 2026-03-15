@@ -69,11 +69,14 @@ traul sync linear
 traul sync claude-code
 traul sync markdown
 
-# Search messages (hybrid search by default)
+# Search messages (hybrid vector+keyword by default, requires Ollama)
+# Best for multi-word and exploratory queries — finds semantically
+# related messages even when exact keywords don't all appear
 traul search "deployment issue"
-traul search "bug" --source slack --after 2025-01-01 --limit 20
+traul search "metrics mixpanel registration" --source slack --after 2025-01-01
 
-# Full-text search only
+# Keyword-only search (FTS5/BM25, no Ollama needed)
+# Faster, but requires ALL terms to match — can miss results on broad queries
 traul search "error" --fts
 
 # Generate embeddings for vector search
