@@ -1,5 +1,6 @@
 import type { TraulDB } from "../db/database";
 import { embedBatch, vecToBytes, BATCH_SIZE } from "../lib/embeddings";
+import { shouldChunk, chunkText } from "../lib/chunker";
 
 function formatDuration(ms: number): string {
   const secs = Math.floor(ms / 1000);
@@ -16,7 +17,8 @@ async function embedItems(
   items: Array<{ id: number; content: string }>,
   insertFn: (id: number, embedding: Uint8Array) => void,
   label: string,
-  quiet: boolean
+  quiet: boolean,
+  chunkFn?: (id: number, content: string) => void,
 ): Promise<{ done: number; failed: number; elapsed: number }> {
   let done = 0;
   let failed = 0;
@@ -29,7 +31,24 @@ async function embedItems(
   const skippedIds: number[] = [];
 
   for (let i = 0; i < items.length; i += BATCH_SIZE) {
-    const batch = items.slice(i, i + BATCH_SIZE);
+    let batch = items.slice(i, i + BATCH_SIZE);
+
+    // Chunk long items instead of embedding them directly
+    if (chunkFn) {
+      const short: typeof batch = [];
+      for (const item of batch) {
+        if (shouldChunk(item.content)) {
+          chunkFn(item.id, item.content);
+          done++; // counted as processed (chunks will be embedded separately)
+        } else {
+          short.push(item);
+        }
+      }
+      batch = short;
+    }
+
+    if (batch.length === 0) continue;
+
     try {
       const vecs = await embedBatch(
         batch.map((item) => item.content),
@@ -95,14 +114,18 @@ export async function runEmbed(
     console.log(`Embeddings: ${stats.embedded_messages}/${stats.total_messages} messages, ${chunkStats.embedded_chunks}/${chunkStats.total_chunks} chunks`);
   }
 
-  // Embed messages
+  // Embed messages — chunk long ones on the fly before each batch
   const messages = db.getUnembeddedMessages(batchLimit);
   if (messages.length > 0) {
     const r = await embedItems(
       messages,
       (id, emb) => db.insertEmbedding(id, emb),
       "messages",
-      !!options.quiet
+      !!options.quiet,
+      (id, content) => {
+        const chunks = chunkText(content);
+        db.replaceChunks(id, chunks);
+      },
     );
     if (!options.quiet) {
       console.log(`Messages: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);

@@ -149,6 +149,69 @@ describe("TraulDB", () => {
     });
   });
 
+  describe("getUnembeddedMessages", () => {
+    it("excludes messages that have chunks", () => {
+      // Insert a short message (no chunks needed)
+      db.upsertMessage({
+        source: "slack",
+        source_id: "C1:1",
+        channel_name: "eng",
+        author_name: "bob",
+        content: "short message",
+        sent_at: 1700000000,
+      });
+
+      // Insert a long message that will be chunked
+      db.upsertMessage({
+        source: "claude-code",
+        source_id: "cc:sess1:uuid1",
+        channel_name: "traul",
+        author_name: "claude",
+        content: "x".repeat(5000),
+        sent_at: 1700000001,
+      });
+
+      // Get the long message's id and create chunks for it
+      const longMsg = db.db
+        .query<{ id: number }, [string]>(
+          "SELECT id FROM messages WHERE source_id = ?"
+        )
+        .get("cc:sess1:uuid1");
+
+      db.replaceChunks(longMsg!.id, [
+        { index: 0, content: "chunk 0 content", embeddingInput: "chunk 0" },
+        { index: 1, content: "chunk 1 content", embeddingInput: "chunk 1" },
+      ]);
+
+      // getUnembeddedMessages should only return the short message
+      const unembedded = db.getUnembeddedMessages(100);
+      expect(unembedded).toHaveLength(1);
+      expect(unembedded[0].content).toBe("short message");
+    });
+
+    it("includes messages without chunks", () => {
+      db.upsertMessage({
+        source: "slack",
+        source_id: "C1:1",
+        channel_name: "eng",
+        author_name: "bob",
+        content: "message one",
+        sent_at: 1700000000,
+      });
+      db.upsertMessage({
+        source: "slack",
+        source_id: "C1:2",
+        channel_name: "eng",
+        author_name: "alice",
+        content: "message two",
+        sent_at: 1700000001,
+      });
+
+      const unembedded = db.getUnembeddedMessages(100);
+      expect(unembedded).toHaveLength(2);
+    });
+  });
+
   describe("stats", () => {
     it("returns correct counts", () => {
       db.upsertMessage({

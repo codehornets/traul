@@ -1,20 +1,22 @@
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const EMBED_MODEL = process.env.TRAUL_EMBED_MODEL ?? "snowflake-arctic-embed2";
 const EMBED_DIMS = 1024;
-const BATCH_SIZE = 200;
+const BATCH_SIZE = 50;
 
-export { EMBED_DIMS, EMBED_MODEL, BATCH_SIZE };
+export { EMBED_DIMS, EMBED_MODEL, BATCH_SIZE, MAX_TEXT_LENGTH };
 
 // snowflake-arctic-embed2 context is 8192 tokens.
 // Non-Latin (Cyrillic, CJK) text uses ~2-4 tokens per char.
-// Truncation steps for retry on context overflow.
-const TRUNCATE_LIMITS = [4000, 2000, 1000];
+// Pre-truncate texts before sending to Ollama to avoid massive payloads.
+const MAX_TEXT_LENGTH = 4000;
+// Further truncation steps for retry on context overflow.
+const TRUNCATE_LIMITS = [2000, 1000];
 
 async function tryEmbedBatch(
   texts: string[]
 ): Promise<{ ok: true; embeddings: number[][] } | { ok: false; error: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
+  const timer = setTimeout(() => controller.abort(), 30_000);
   try {
     const res = await fetch(`${OLLAMA_URL}/api/embed`, {
       method: "POST",
@@ -28,7 +30,7 @@ async function tryEmbedBatch(
     return { ok: false, error: data.error ?? `HTTP ${res.status}` };
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      return { ok: false, error: "timeout after 10s" };
+      return { ok: false, error: "timeout after 30s" };
     }
     throw err;
   } finally {
@@ -41,13 +43,14 @@ function isContextOverflow(error: string): boolean {
 }
 
 export async function embed(text: string): Promise<Float32Array> {
-  const result = await tryEmbedBatch([text]);
+  const input = text.length > MAX_TEXT_LENGTH ? text.slice(0, MAX_TEXT_LENGTH) : text;
+  const result = await tryEmbedBatch([input]);
   if (result.ok) return new Float32Array(result.embeddings[0]);
   if (!isContextOverflow(result.error)) {
     throw new Error(`Ollama embedding failed: ${result.error}`);
   }
   for (const limit of TRUNCATE_LIMITS) {
-    const truncated = await tryEmbedBatch([text.slice(0, limit)]);
+    const truncated = await tryEmbedBatch([input.slice(0, limit)]);
     if (truncated.ok) return new Float32Array(truncated.embeddings[0]);
     if (!isContextOverflow(truncated.error)) {
       throw new Error(`Ollama embedding failed: ${truncated.error}`);
@@ -61,8 +64,10 @@ export async function embedBatch(
   onSkip?: (index: number, error: string) => void
 ): Promise<(Float32Array | null)[]> {
   const results: (Float32Array | null)[] = [];
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE);
+  // Pre-truncate all texts to avoid sending megabyte payloads to Ollama
+  const truncated = texts.map((t) => (t.length > MAX_TEXT_LENGTH ? t.slice(0, MAX_TEXT_LENGTH) : t));
+  for (let i = 0; i < truncated.length; i += BATCH_SIZE) {
+    const batch = truncated.slice(i, i + BATCH_SIZE);
     const result = await tryEmbedBatch(batch);
     if (result.ok) {
       results.push(...result.embeddings.map((e) => new Float32Array(e)));

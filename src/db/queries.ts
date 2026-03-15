@@ -89,6 +89,7 @@ export const GET_UNEMBEDDED_MESSAGES = `
   FROM messages m
   WHERE m.content != ''
     AND m.id NOT IN (SELECT message_id FROM vec_messages)
+    AND m.id NOT IN (SELECT DISTINCT message_id FROM chunks)
   ORDER BY m.id
   LIMIT ?
 `;

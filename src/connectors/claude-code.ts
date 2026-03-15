@@ -5,6 +5,7 @@ import type { Connector, SyncResult } from "./types";
 import type { TraulDB } from "../db/database";
 import type { TraulConfig } from "../lib/config";
 import { getSyncStartTimestamp } from "../lib/config";
+import { shouldChunk, chunkText } from "../lib/chunker";
 import * as log from "../lib/logger";
 
 const PROJECTS_DIR = join(homedir(), ".claude", "projects");
@@ -140,22 +141,30 @@ export const claudeCodeConnector: Connector = {
 
         // Store each meaningful exchange as a message
         for (const sm of sessionMessages) {
-          // Truncate very long assistant messages
-          const content = sm.text.length > 4000
-            ? sm.text.slice(0, 4000) + "..."
-            : sm.text;
-
           db.upsertMessage({
             source: "claude-code",
             source_id: `cc:${sessionId}:${sm.uuid}`,
             channel_name: projectName,
             thread_id: sessionId,
             author_name: sm.author,
-            content,
+            content: sm.text,
             sent_at: sm.timestamp,
             metadata: JSON.stringify({ project_dir: projDir }),
           });
           result.messagesAdded++;
+
+          // Chunk long messages for better embedding coverage
+          if (shouldChunk(sm.text)) {
+            const msgRow = db.db
+              .query<{ id: number }, [string, string]>(
+                "SELECT id FROM messages WHERE source = ? AND source_id = ?"
+              )
+              .get("claude-code", `cc:${sessionId}:${sm.uuid}`);
+            if (msgRow) {
+              const chunks = chunkText(sm.text, { docTitle: `${projectName} session` });
+              db.replaceChunks(msgRow.id, chunks);
+            }
+          }
         }
 
         if (latestTimestamp) {
