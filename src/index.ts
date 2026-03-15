@@ -54,6 +54,11 @@ program
     "--fts",
     "keyword-only search (FTS5/BM25, no vector search). Faster but requires all terms to match — use hybrid for multi-word or exploratory queries"
   )
+  .option("--or", "join search terms with OR instead of AND (use with --fts)")
+  .option(
+    "--like",
+    "substring match (LIKE) — bypasses FTS, useful for exact phrases"
+  )
   .action(async (query: string, options) => {
     await runSearch(db, query, options);
     db.close();

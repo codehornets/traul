@@ -88,6 +88,12 @@ traul search "metrics mixpanel registration" --source slack --after 2025-01-01
 # Faster, but requires ALL terms to match — can miss results on broad queries
 traul search "error" --fts
 
+# OR mode — match ANY term instead of ALL (use with --fts or hybrid)
+traul search "deposit withdraw broken" --fts --or
+
+# Substring search — bypasses FTS tokenization, useful for exact phrases
+traul search "how do I" --like -s discord -l 20
+
 # Generate embeddings for vector search
 traul embed
 

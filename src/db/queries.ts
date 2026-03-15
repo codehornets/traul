@@ -197,6 +197,21 @@ export const FTS_BACKFILL_CHUNKS = `
     AND c.id NOT IN (SELECT chunk_id FROM vec_chunks)
 `;
 
+export const LIKE_SEARCH_MESSAGES = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, m.content, m.sent_at, m.metadata
+  FROM messages m
+  WHERE m.content LIKE '%' || ? || '%'
+`;
+
+export const LIKE_SEARCH_CHUNKS = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, c.content, m.sent_at, m.metadata
+  FROM chunks c
+  JOIN messages m ON m.id = c.message_id
+  WHERE c.content LIKE '%' || ? || '%'
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

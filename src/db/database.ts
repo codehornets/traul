@@ -449,6 +449,107 @@ export class TraulDB {
     return combined;
   }
 
+  likeSearchAll(
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const k = limit * 3;
+
+    const likeMessages = this.likeSearchMessages(query, { ...options, limit: k });
+    const likeChunks = this.likeSearchChunks(query, { ...options, limit: k });
+
+    return this.rrfMerge([likeMessages, likeChunks], limit);
+  }
+
+  private likeSearchMessages(
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (string | number)[] = [query];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.LIKE_SEARCH_MESSAGES;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY m.sent_at DESC LIMIT ?";
+    params.push(limit);
+
+    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+  }
+
+  private likeSearchChunks(
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (string | number)[] = [query];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.LIKE_SEARCH_CHUNKS;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY m.sent_at DESC LIMIT ?";
+    params.push(limit);
+
+    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+  }
+
   private rrfMerge(resultSets: MessageRow[][], limit: number): MessageRow[] {
     const RRF_K = 60;
     const scores = new Map<string, { score: number; msg: MessageRow }>();

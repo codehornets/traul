@@ -13,6 +13,8 @@ export async function runSearch(
     limit?: string;
     json?: boolean;
     fts?: boolean;
+    or?: boolean;
+    like?: boolean;
   }
 ): Promise<void> {
   const limit = options.limit ? parseInt(options.limit, 10) : 20;
@@ -31,15 +33,28 @@ export async function runSearch(
     limit,
   };
 
+  // Build FTS query: join terms with OR when --or flag is set
+  const ftsQuery = options.or
+    ? query.split(/\s+/).filter(Boolean).join(" OR ")
+    : query;
+
   let results;
-  if (options.fts) {
-    results = db.ftsSearchAll(query, searchOpts);
+  if (options.like) {
+    results = db.likeSearchAll(query, searchOpts);
+  } else if (options.fts) {
+    results = db.ftsSearchAll(ftsQuery, searchOpts);
   } else {
     try {
       const vec = await embed(query);
-      results = db.hybridSearchAll(vecToBytes(vec), query, searchOpts);
+      results = db.hybridSearchAll(vecToBytes(vec), ftsQuery, searchOpts);
+      const { total_messages, embedded_messages } = db.getEmbeddingStats();
+      const pct = total_messages > 0 ? Math.round((embedded_messages / total_messages) * 100) : 0;
+      if (pct < 100) {
+        console.warn(`search: hybrid mode — ${pct}% vector, ${100 - pct}% FTS`);
+      }
     } catch {
-      results = db.ftsSearchAll(query, searchOpts);
+      console.warn("search: Ollama unavailable, falling back to FTS-only");
+      results = db.ftsSearchAll(ftsQuery, searchOpts);
     }
   }
 
