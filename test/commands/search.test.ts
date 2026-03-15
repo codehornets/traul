@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { TraulDB } from "../../src/db/database";
+import { EMBED_DIMS } from "../../src/lib/embeddings";
+
+function fakeEmbedding(): Uint8Array {
+  const vec = new Float32Array(EMBED_DIMS);
+  for (let i = 0; i < EMBED_DIMS; i++) vec[i] = Math.random() - 0.5;
+  return new Uint8Array(vec.buffer);
+}
 
 describe("Search command logic", () => {
   let db: TraulDB;
@@ -80,5 +87,100 @@ describe("Search command logic", () => {
     // Non-matching substring should return nothing
     const results3 = db.searchMessages("feedback", { channel: "slack" });
     expect(results3.length).toBe(0);
+  });
+});
+
+describe("Hybrid search", () => {
+  let db: TraulDB;
+
+  beforeEach(() => {
+    db = new TraulDB(":memory:");
+
+    // Message 1: will be embedded
+    db.upsertMessage({
+      source: "slack",
+      source_id: "C1:1",
+      channel_name: "eng",
+      author_name: "alice",
+      content: "The deployment pipeline is broken again",
+      sent_at: 1700000000,
+    });
+
+    // Message 2: will NOT be embedded (FTS backfill target)
+    db.upsertMessage({
+      source: "slack",
+      source_id: "C1:2",
+      channel_name: "eng",
+      author_name: "bob",
+      content: "The deployment script needs a rewrite",
+      sent_at: 1700000100,
+    });
+
+    // Message 3: unrelated
+    db.upsertMessage({
+      source: "slack",
+      source_id: "C1:3",
+      channel_name: "random",
+      author_name: "carol",
+      content: "Lunch at noon?",
+      sent_at: 1700000200,
+    });
+
+    // Embed only message 1
+    const msg1 = db.db
+      .query<{ id: number }, [string]>("SELECT id FROM messages WHERE source_id = ?")
+      .get("C1:1");
+    db.insertEmbedding(msg1!.id, fakeEmbedding());
+  });
+
+  it("hybridSearchAll returns vector results first, then FTS backfill", () => {
+    const queryEmbedding = fakeEmbedding();
+    const results = db.hybridSearchAll(queryEmbedding, "deployment", { limit: 10 });
+
+    // Should find both deployment messages
+    expect(results.length).toBe(2);
+
+    // First result should be the embedded message (from vector search)
+    expect(results[0].content).toContain("deployment pipeline");
+
+    // Second result should be the unembedded message (from FTS backfill)
+    expect(results[1].content).toContain("deployment script");
+  });
+
+  it("hybridSearchAll deduplicates results", () => {
+    // Embed message 2 as well — both messages now have embeddings
+    const msg2 = db.db
+      .query<{ id: number }, [string]>("SELECT id FROM messages WHERE source_id = ?")
+      .get("C1:2");
+    db.insertEmbedding(msg2!.id, fakeEmbedding());
+
+    const results = db.hybridSearchAll(fakeEmbedding(), "deployment", { limit: 10 });
+
+    // Should still only have 2 results (no duplicates), and FTS backfill should find nothing
+    const ids = results.map((r) => r.id);
+    const uniqueIds = new Set(ids);
+    expect(uniqueIds.size).toBe(ids.length);
+  });
+
+  it("hybridSearchAll respects limit", () => {
+    const results = db.hybridSearchAll(fakeEmbedding(), "deployment", { limit: 1 });
+    expect(results.length).toBe(1);
+  });
+
+  it("hybridSearchAll filters by channel", () => {
+    const results = db.hybridSearchAll(fakeEmbedding(), "deployment", {
+      channel: "random",
+      limit: 10,
+    });
+
+    // No deployment messages in #random
+    expect(results.length).toBe(0);
+  });
+
+  it("ftsSearchAll still works independently for --fts flag", () => {
+    const results = db.ftsSearchAll("deployment", { limit: 10 });
+
+    // Should find both deployment messages regardless of embedding status
+    expect(results.length).toBe(2);
   });
 });

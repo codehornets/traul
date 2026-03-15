@@ -322,6 +322,133 @@ export class TraulDB {
     return this.rrfMerge([ftsMessages, ftsChunks], limit);
   }
 
+  /** FTS search only unembedded messages (backfill for cold start) */
+  private ftsBackfillMessages(
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (string | number)[] = [query];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.FTS_BACKFILL_MESSAGES;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY rank LIMIT ?";
+    params.push(limit);
+
+    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+  }
+
+  /** FTS search only unembedded chunks (backfill for cold start) */
+  private ftsBackfillChunks(
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (string | number)[] = [query];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.FTS_BACKFILL_CHUNKS;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY rank LIMIT ?";
+    params.push(limit);
+
+    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+  }
+
+  /** Hybrid search: vector for embedded messages, FTS backfill for the rest */
+  hybridSearchAll(
+    embedding: Uint8Array,
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const k = limit * 3;
+
+    // Vector search over embedded content
+    const vecMessages = this.vectorSearch(embedding, { ...options, limit: k });
+    const vecChunks = this.vectorSearchChunks(embedding, { ...options, limit: k });
+    const vectorResults = this.rrfMerge([vecMessages, vecChunks], limit);
+
+    // FTS backfill over unembedded content only
+    const backfillMessages = this.ftsBackfillMessages(query, { ...options, limit: k });
+    const backfillChunks = this.ftsBackfillChunks(query, { ...options, limit: k });
+    const backfillResults = this.rrfMerge([backfillMessages, backfillChunks], limit);
+
+    // Vector results first, then backfill (deduped by message id)
+    const seen = new Set<number>();
+    const combined: MessageRow[] = [];
+
+    for (const msg of vectorResults) {
+      seen.add(msg.id);
+      combined.push(msg);
+    }
+    for (const msg of backfillResults) {
+      if (!seen.has(msg.id) && combined.length < limit) {
+        seen.add(msg.id);
+        combined.push(msg);
+      }
+    }
+
+    return combined;
+  }
+
   private rrfMerge(resultSets: MessageRow[][], limit: number): MessageRow[] {
     const RRF_K = 60;
     const scores = new Map<string, { score: number; msg: MessageRow }>();

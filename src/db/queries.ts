@@ -173,6 +173,30 @@ export const GET_MESSAGE_CHUNK_IDS = `
   SELECT id FROM chunks WHERE message_id = ?
 `;
 
+// FTS backfill: search only messages that have NOT been embedded yet
+export const FTS_BACKFILL_MESSAGES = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, m.content, m.sent_at, m.metadata,
+         bm25(messages_fts) AS rank
+  FROM messages_fts
+  JOIN messages m ON messages_fts.rowid = m.id
+  WHERE messages_fts MATCH ?
+    AND m.id NOT IN (SELECT message_id FROM vec_messages)
+    AND m.id NOT IN (SELECT DISTINCT message_id FROM chunks)
+`;
+
+// FTS backfill: search only chunks that have NOT been embedded yet
+export const FTS_BACKFILL_CHUNKS = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, c.content, m.sent_at, m.metadata,
+         bm25(chunks_fts) AS rank
+  FROM chunks_fts
+  JOIN chunks c ON chunks_fts.rowid = c.id
+  JOIN messages m ON m.id = c.message_id
+  WHERE chunks_fts MATCH ?
+    AND c.id NOT IN (SELECT chunk_id FROM vec_chunks)
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

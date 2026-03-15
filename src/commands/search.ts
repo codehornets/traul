@@ -37,7 +37,7 @@ export async function runSearch(
   } else {
     try {
       const vec = await embed(query);
-      results = db.vectorSearchAll(vecToBytes(vec), searchOpts);
+      results = db.hybridSearchAll(vecToBytes(vec), query, searchOpts);
     } catch {
       results = db.ftsSearchAll(query, searchOpts);
     }
