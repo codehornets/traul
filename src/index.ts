@@ -5,12 +5,6 @@ import { loadConfig, ensureDbDir } from "./lib/config";
 import { setVerbose } from "./lib/logger";
 import { runSync } from "./commands/sync";
 import { runSearch } from "./commands/search";
-import {
-  runSignalsList,
-  runSignalsEvaluate,
-  runSignalsDismiss,
-} from "./commands/signals";
-import { runBriefing } from "./commands/briefing";
 import { runMessages } from "./commands/messages";
 import { runChannels } from "./commands/channels";
 import { runEmbed } from "./commands/embed";
@@ -62,32 +56,6 @@ program
     db.close();
   });
 
-const signalsCmd = program
-  .command("signals")
-  .description("View and manage signal results")
-  .option("--json", "output as JSON")
-  .action((options) => {
-    runSignalsList(db, options);
-    db.close();
-  });
-
-signalsCmd
-  .command("run")
-  .description("Evaluate all enabled signal definitions")
-  .action(() => {
-    runSignalsEvaluate(db, config);
-    db.close();
-  });
-
-signalsCmd
-  .command("dismiss")
-  .description("Dismiss a signal result")
-  .argument("<id>", "signal result ID")
-  .action((id: string) => {
-    runSignalsDismiss(db, id);
-    db.close();
-  });
-
 program
   .command("messages")
   .description("Browse messages chronologically")
@@ -123,14 +91,6 @@ program
   .option("-q, --quiet", "minimal output")
   .action(async (options) => {
     await runEmbed(db, options);
-    db.close();
-  });
-
-program
-  .command("briefing")
-  .description("Show a structured briefing with signals, stats, and volume")
-  .action(() => {
-    runBriefing(db);
     db.close();
   });
 

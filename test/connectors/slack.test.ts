@@ -6,7 +6,7 @@ describe("Slack connector", () => {
     expect(slackConnector.name).toBe("slack");
   });
 
-  it("throws when no token configured", async () => {
+  it("returns zero counts when no token configured", async () => {
     const { TraulDB } = await import("../../src/db/database");
     const db = new TraulDB(":memory:");
     const config = {
@@ -14,9 +14,10 @@ describe("Slack connector", () => {
       slack: { token: "", my_user_id: "", channels: [] },
     };
 
-    await expect(slackConnector.sync(db, config)).rejects.toThrow(
-      "Slack token not configured"
-    );
+    const result = await slackConnector.sync(db, config);
+    expect(result.messagesAdded).toBe(0);
+    expect(result.messagesUpdated).toBe(0);
+    expect(result.contactsAdded).toBe(0);
     db.close();
   });
 });

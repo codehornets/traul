@@ -149,60 +149,6 @@ describe("TraulDB", () => {
     });
   });
 
-  describe("signals", () => {
-    it("inserts and retrieves signal results", () => {
-      // Seed a definition
-      db.db.run(
-        `INSERT INTO signal_definitions (name, query, severity_expression)
-         VALUES ('test-signal', 'SELECT 1', 'info')`
-      );
-
-      db.upsertMessage({
-        source: "slack",
-        source_id: "C1:1",
-        channel_name: "eng",
-        author_name: "bob",
-        content: "test message",
-        sent_at: 1700000000,
-      });
-
-      db.insertSignalResult({
-        definitionId: 1,
-        messageId: 1,
-        severity: "warning",
-        title: "Test signal fired",
-        detail: "Something needs attention",
-      });
-
-      const results = db.getSignalResults();
-      expect(results.length).toBe(1);
-      expect(results[0].severity).toBe("warning");
-      expect(results[0].title).toBe("Test signal fired");
-    });
-
-    it("dismisses signal results", () => {
-      db.db.run(
-        `INSERT INTO signal_definitions (name, query, severity_expression)
-         VALUES ('test-signal', 'SELECT 1', 'info')`
-      );
-
-      db.insertSignalResult({
-        definitionId: 1,
-        messageId: null,
-        severity: "info",
-        title: "Dismiss me",
-      });
-
-      const before = db.getSignalResults();
-      expect(before.length).toBe(1);
-
-      db.dismissSignal(before[0].id);
-
-      const after = db.getSignalResults();
-      expect(after.length).toBe(0);
-    });
-  });
-
   describe("stats", () => {
     it("returns correct counts", () => {
       db.upsertMessage({
@@ -225,7 +171,6 @@ describe("TraulDB", () => {
       expect(stats.total_messages).toBe(2);
       expect(stats.total_channels).toBe(2);
       expect(stats.total_contacts).toBe(1);
-      expect(stats.active_signals).toBe(0);
     });
   });
 });

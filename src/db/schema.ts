@@ -86,30 +86,37 @@ const SCHEMA_SQL = `
     UNIQUE(source, key)
   );
 
-  CREATE TABLE IF NOT EXISTS signal_definitions (
+  CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    description TEXT,
-    query TEXT NOT NULL,
-    severity_expression TEXT NOT NULL DEFAULT 'info',
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-  );
-
-  CREATE TABLE IF NOT EXISTS signal_results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    definition_id INTEGER NOT NULL REFERENCES signal_definitions(id),
-    message_id INTEGER REFERENCES messages(id),
-    severity TEXT NOT NULL DEFAULT 'info',
-    title TEXT NOT NULL,
-    detail TEXT,
-    dismissed_at INTEGER,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    embedding_input TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    UNIQUE(definition_id, message_id)
+    UNIQUE(message_id, chunk_index)
   );
 
-  CREATE INDEX IF NOT EXISTS idx_signal_results_active ON signal_results(dismissed_at) WHERE dismissed_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_chunks_message ON chunks(message_id);
+
+  CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    content,
+    content='chunks',
+    content_rowid='id',
+    tokenize='porter unicode61'
+  );
+
+  CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+    INSERT INTO chunks_fts(rowid, content) VALUES (new.id, new.content);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+    INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES ('delete', old.id, old.content);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+    INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES ('delete', old.id, old.content);
+    INSERT INTO chunks_fts(rowid, content) VALUES (new.id, new.content);
+  END;
 `;
 
 export function initializeDatabase(path: string): Database {
@@ -120,6 +127,9 @@ export function initializeDatabase(path: string): Database {
   db.exec(SCHEMA_SQL);
   db.exec(
     `CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(message_id INTEGER PRIMARY KEY, embedding float[${EMBED_DIMS}])`
+  );
+  db.exec(
+    `CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[${EMBED_DIMS}])`
   );
   return db;
 }

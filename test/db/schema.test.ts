@@ -16,8 +16,6 @@ describe("initializeDatabase", () => {
     expect(tables).toContain("contacts");
     expect(tables).toContain("contact_identities");
     expect(tables).toContain("sync_cursors");
-    expect(tables).toContain("signal_definitions");
-    expect(tables).toContain("signal_results");
     expect(tables).toContain("messages_fts");
     db.close();
   });

@@ -1,15 +1,13 @@
 # traul
 
-Personal Intelligence Engine — watches communication streams, identifies patterns, and surfaces actionable insights.
+Personal Intelligence Engine — aggregates communication streams into a searchable local index.
 
-Traul aggregates messages from Slack, Telegram, and Linear into a local SQLite database with full-text and vector search, then runs automated signal detection to highlight what needs your attention.
+Traul syncs messages from Slack, Telegram, and Linear into a local SQLite database with full-text and vector search.
 
 ## Features
 
 - **Multi-source sync** — Slack (multi-workspace, xoxc/xoxb tokens), Telegram (via Telethon), Linear (multi-workspace GraphQL), Claude Code sessions, Markdown files
 - **Hybrid search** — FTS5 full-text search + vector similarity via Ollama embeddings
-- **Signal detection** — pattern-based alerts (e.g. stale threads) with dismiss/snooze
-- **Briefings** — structured daily summary with signal counts, message volume, and highlights
 - **Contact dedup** — unified identities across sources
 - **Local-first** — all data stays in a local SQLite database
 
@@ -85,14 +83,6 @@ traul embed
 # Browse channels and messages
 traul channels
 traul messages general --limit 50
-
-# View detected signals
-traul signals
-traul signals run
-traul signals dismiss <id>
-
-# Daily briefing
-traul briefing
 ```
 
 ## Architecture
@@ -103,10 +93,9 @@ src/
 ├── connectors/     Source integrations (Slack, Telegram, Linear, Claude Code, Markdown)
 ├── db/             SQLite schema, queries, database wrapper
 ├── lib/            Config, embeddings, formatting, logging
-└── signals/        Pattern detection engine + definitions
 ```
 
-Data flows: **sources → connectors → SQLite (FTS5 + vec0) → commands/signals → user**.
+Data flows: **sources → connectors → SQLite (FTS5 + vec0) → search → user**.
 
 ## Development
 

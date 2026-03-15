@@ -15,29 +15,20 @@ export interface MessageRow {
   rank?: number;
 }
 
-export interface SignalResultRow {
-  id: number;
-  severity: string;
-  title: string;
-  detail: string | null;
-  created_at: number;
-  signal_name: string;
-  channel_name: string | null;
-  author_name: string | null;
-  content: string | null;
-  sent_at: number | null;
-}
-
 export interface EmbeddingStats {
   total_messages: number;
   embedded_messages: number;
+}
+
+export interface ChunkEmbeddingStats {
+  total_chunks: number;
+  embedded_chunks: number;
 }
 
 export interface Stats {
   total_messages: number;
   total_channels: number;
   total_contacts: number;
-  active_signals: number;
 }
 
 export class TraulDB {
@@ -163,53 +154,6 @@ export class TraulDB {
     params.push(limit);
 
     return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
-  }
-
-  getSignalDefinitions(): Array<{
-    id: number;
-    name: string;
-    description: string | null;
-    query: string;
-    severity_expression: string;
-    enabled: number;
-  }> {
-    return this.db
-      .query<
-        {
-          id: number;
-          name: string;
-          description: string | null;
-          query: string;
-          severity_expression: string;
-          enabled: number;
-        },
-        []
-      >(Q.GET_SIGNAL_DEFINITIONS)
-      .all();
-  }
-
-  insertSignalResult(result: {
-    definitionId: number;
-    messageId: number | null;
-    severity: string;
-    title: string;
-    detail?: string;
-  }): void {
-    this.db.run(Q.INSERT_SIGNAL_RESULT, [
-      result.definitionId,
-      result.messageId,
-      result.severity,
-      result.title,
-      result.detail ?? null,
-    ]);
-  }
-
-  getSignalResults(): SignalResultRow[] {
-    return this.db.query<SignalResultRow, []>(Q.GET_SIGNAL_RESULTS).all();
-  }
-
-  dismissSignal(id: number): void {
-    this.db.run(Q.DISMISS_SIGNAL, [id]);
   }
 
   getStats(): Stats {
@@ -357,24 +301,32 @@ export class TraulDB {
     const ftsResults = this.searchMessages(query, { ...options, limit: k });
     const vecResults = this.vectorSearch(embedding, { ...options, limit: k });
 
-    // Reciprocal Rank Fusion
+    // Also search chunks
+    const ftsChunkResults = this.searchChunks(query, { ...options, limit: k });
+    const vecChunkResults = this.vectorSearchChunks(embedding, { ...options, limit: k });
+
+    // Reciprocal Rank Fusion — use content hash as key to deduplicate chunks from same message
     const RRF_K = 60;
-    const scores = new Map<number, { score: number; msg: MessageRow }>();
+    const scores = new Map<string, { score: number; msg: MessageRow }>();
 
-    ftsResults.forEach((msg, i) => {
-      const rrf = 1.0 / (RRF_K + i + 1);
-      scores.set(msg.id, { score: rrf, msg });
-    });
+    const addResults = (results: MessageRow[]) => {
+      results.forEach((msg, i) => {
+        const rrf = 1.0 / (RRF_K + i + 1);
+        // Use id + content prefix as key to keep distinct chunks separate
+        const key = `${msg.id}:${msg.content.slice(0, 50)}`;
+        const existing = scores.get(key);
+        if (existing) {
+          existing.score += rrf;
+        } else {
+          scores.set(key, { score: rrf, msg });
+        }
+      });
+    };
 
-    vecResults.forEach((msg, i) => {
-      const rrf = 1.0 / (RRF_K + i + 1);
-      const existing = scores.get(msg.id);
-      if (existing) {
-        existing.score += rrf;
-      } else {
-        scores.set(msg.id, { score: rrf, msg });
-      }
-    });
+    addResults(ftsResults);
+    addResults(vecResults);
+    addResults(ftsChunkResults);
+    addResults(vecChunkResults);
 
     return [...scores.values()]
       .sort((a, b) => b.score - a.score)
@@ -390,10 +342,117 @@ export class TraulDB {
     return this.db.run(Q.DELETE_ORPHANED_EMBEDDINGS).changes;
   }
 
-  getMessageVolume(days: number = 7): Array<{ day: string; count: number }> {
+  deleteOrphanedChunkEmbeddings(): number {
+    return this.db.run(Q.DELETE_ORPHANED_CHUNK_EMBEDDINGS).changes;
+  }
+
+  replaceChunks(messageId: number, chunks: Array<{ index: number; content: string; embeddingInput: string }>): void {
+    // Delete old chunk embeddings first
+    const oldChunkIds = this.db
+      .query<{ id: number }, [number]>(Q.GET_MESSAGE_CHUNK_IDS)
+      .all(messageId);
+    for (const { id } of oldChunkIds) {
+      this.db.run("DELETE FROM vec_chunks WHERE chunk_id = ?", [id]);
+    }
+
+    this.db.run(Q.REPLACE_CHUNKS_DELETE, [messageId]);
+    for (const chunk of chunks) {
+      this.db.run(Q.INSERT_CHUNK, [messageId, chunk.index, chunk.content, chunk.embeddingInput]);
+    }
+  }
+
+  getUnembeddedChunks(limit: number = 100): Array<{ id: number; content: string }> {
     return this.db
-      .query<{ day: string; count: number }, [number]>(Q.GET_MESSAGE_VOLUME)
-      .all(days);
+      .query<{ id: number; content: string }, [number]>(Q.GET_UNEMBEDDED_CHUNKS)
+      .all(limit);
+  }
+
+  insertChunkEmbedding(chunkId: number, embedding: Uint8Array): void {
+    this.db.run(Q.INSERT_CHUNK_EMBEDDING, [chunkId, embedding]);
+  }
+
+  getChunkEmbeddingStats(): ChunkEmbeddingStats {
+    return this.db.query<ChunkEmbeddingStats, []>(Q.CHUNK_EMBEDDING_STATS).get()!;
+  }
+
+  searchChunks(
+    query: string,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const limit = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (string | number)[] = [query];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name = ?");
+      params.push(options.channel);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.SEARCH_CHUNKS_FILTERED;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY rank LIMIT ?";
+    params.push(limit);
+
+    return this.db.query<MessageRow, (string | number)[]>(sql).all(...params);
+  }
+
+  vectorSearchChunks(
+    embedding: Uint8Array,
+    options?: {
+      source?: string;
+      channel?: string;
+      after?: number;
+      before?: number;
+      limit?: number;
+    }
+  ): MessageRow[] {
+    const k = options?.limit ?? 20;
+    const conditions: string[] = [];
+    const params: (Uint8Array | string | number)[] = [embedding, k];
+
+    if (options?.source) {
+      conditions.push("m.source = ?");
+      params.push(options.source);
+    }
+    if (options?.channel) {
+      conditions.push("m.channel_name = ?");
+      params.push(options.channel);
+    }
+    if (options?.after) {
+      conditions.push("m.sent_at > ?");
+      params.push(options.after);
+    }
+    if (options?.before) {
+      conditions.push("m.sent_at < ?");
+      params.push(options.before);
+    }
+
+    let sql = Q.VECTOR_SEARCH_CHUNKS;
+    if (conditions.length > 0) {
+      sql += " AND " + conditions.join(" AND ");
+    }
+
+    return this.db.query<MessageRow, (Uint8Array | string | number)[]>(sql).all(...params);
   }
 
   close(): void {

@@ -61,52 +61,11 @@ export const SEARCH_MESSAGES_FILTERED = `
   WHERE messages_fts MATCH ?
 `;
 
-export const GET_SIGNAL_DEFINITIONS = `
-  SELECT id, name, description, query, severity_expression, enabled
-  FROM signal_definitions
-  WHERE enabled = 1
-`;
-
-export const INSERT_SIGNAL_RESULT = `
-  INSERT INTO signal_results (definition_id, message_id, severity, title, detail)
-  VALUES (?, ?, ?, ?, ?)
-  ON CONFLICT(definition_id, message_id) DO UPDATE SET
-    severity = excluded.severity,
-    detail = excluded.detail,
-    updated_at = unixepoch()
-`;
-
-export const GET_SIGNAL_RESULTS = `
-  SELECT sr.id, sr.severity, sr.title, sr.detail, sr.created_at,
-         sd.name AS signal_name,
-         m.channel_name, m.author_name, m.content, m.sent_at
-  FROM signal_results sr
-  JOIN signal_definitions sd ON sd.id = sr.definition_id
-  LEFT JOIN messages m ON m.id = sr.message_id
-  WHERE sr.dismissed_at IS NULL
-  ORDER BY
-    CASE sr.severity WHEN 'urgent' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-    sr.created_at DESC
-`;
-
-export const DISMISS_SIGNAL = `
-  UPDATE signal_results SET dismissed_at = unixepoch() WHERE id = ?
-`;
-
 export const GET_STATS = `
   SELECT
     (SELECT COUNT(*) FROM messages) AS total_messages,
     (SELECT COUNT(DISTINCT channel_name) FROM messages) AS total_channels,
-    (SELECT COUNT(*) FROM contacts) AS total_contacts,
-    (SELECT COUNT(*) FROM signal_results WHERE dismissed_at IS NULL) AS active_signals
-`;
-
-export const GET_MESSAGE_VOLUME = `
-  SELECT date(sent_at, 'unixepoch') AS day, COUNT(*) AS count
-  FROM messages
-  WHERE sent_at > unixepoch() - (86400 * ?)
-  GROUP BY day
-  ORDER BY day DESC
+    (SELECT COUNT(*) FROM contacts) AS total_contacts
 `;
 
 export const GET_MESSAGES = `
@@ -152,6 +111,65 @@ export const EMBEDDING_STATS = `
 export const DELETE_ORPHANED_EMBEDDINGS = `
   DELETE FROM vec_messages
   WHERE message_id NOT IN (SELECT id FROM messages)
+`;
+
+// Chunk queries
+export const REPLACE_CHUNKS_DELETE = `
+  DELETE FROM chunks WHERE message_id = ?
+`;
+
+export const INSERT_CHUNK = `
+  INSERT INTO chunks (message_id, chunk_index, content, embedding_input)
+  VALUES (?, ?, ?, ?)
+`;
+
+export const GET_UNEMBEDDED_CHUNKS = `
+  SELECT c.id, c.embedding_input AS content
+  FROM chunks c
+  LEFT JOIN vec_chunks v ON v.chunk_id = c.id
+  WHERE v.chunk_id IS NULL AND c.content != ''
+  ORDER BY c.id
+  LIMIT ?
+`;
+
+export const INSERT_CHUNK_EMBEDDING = `
+  INSERT INTO vec_chunks(chunk_id, embedding)
+  VALUES (?, ?)
+`;
+
+export const DELETE_ORPHANED_CHUNK_EMBEDDINGS = `
+  DELETE FROM vec_chunks
+  WHERE chunk_id NOT IN (SELECT id FROM chunks)
+`;
+
+export const SEARCH_CHUNKS_FILTERED = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, c.content, m.sent_at, m.metadata,
+         bm25(chunks_fts) AS rank
+  FROM chunks_fts
+  JOIN chunks c ON chunks_fts.rowid = c.id
+  JOIN messages m ON m.id = c.message_id
+  WHERE chunks_fts MATCH ?
+`;
+
+export const VECTOR_SEARCH_CHUNKS = `
+  SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
+         m.author_name, c.content, m.sent_at, m.metadata,
+         v.distance
+  FROM vec_chunks v
+  JOIN chunks c ON c.id = v.chunk_id
+  JOIN messages m ON m.id = c.message_id
+  WHERE v.embedding MATCH ? AND k = ?
+`;
+
+export const CHUNK_EMBEDDING_STATS = `
+  SELECT
+    (SELECT COUNT(*) FROM chunks) AS total_chunks,
+    (SELECT COUNT(*) FROM vec_chunks) AS embedded_chunks
+`;
+
+export const GET_MESSAGE_CHUNK_IDS = `
+  SELECT id FROM chunks WHERE message_id = ?
 `;
 
 export const GET_CHANNELS = `
