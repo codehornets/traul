@@ -64,7 +64,15 @@ export async function runSearch(
   }
 
   if (options.json) {
-    console.log(formatJSON(results));
+    const jsonData = results.map((msg) => ({
+      sent_at: new Date(msg.sent_at * 1000).toISOString(),
+      author: msg.author_name,
+      content: msg.content,
+      channel: msg.channel_name,
+      source: msg.source,
+      ...(msg.rank != null ? { rank: msg.rank } : {}),
+    }));
+    console.log(formatJSON(jsonData));
   } else {
     for (const msg of results) {
       console.log(formatMessage(msg));

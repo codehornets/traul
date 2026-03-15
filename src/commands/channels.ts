@@ -24,7 +24,13 @@ export function runChannels(
   }
 
   if (options.json) {
-    console.log(formatJSON(results));
+    const jsonData = results.map((ch) => ({
+      source: ch.source,
+      name: ch.channel_name,
+      message_count: ch.msg_count,
+      last_activity: new Date(ch.last_message * 1000).toISOString(),
+    }));
+    console.log(formatJSON(jsonData));
   } else {
     for (const ch of results) {
       const source = ch.source.padEnd(12);
