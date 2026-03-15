@@ -105,7 +105,7 @@ export const VECTOR_SEARCH = `
 
 export const EMBEDDING_STATS = `
   SELECT
-    (SELECT COUNT(*) FROM messages) AS total_messages,
+    (SELECT COUNT(*) FROM messages WHERE id NOT IN (SELECT DISTINCT message_id FROM chunks)) AS total_messages,
     (SELECT COUNT(*) FROM vec_messages) AS embedded_messages
 `;
 
