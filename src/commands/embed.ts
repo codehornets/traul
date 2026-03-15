@@ -117,21 +117,22 @@ export async function runEmbed(
     console.log(`Embeddings: ${stats.embedded_messages}/${stats.total_messages} messages, ${chunkStats.embedded_chunks}/${chunkStats.total_chunks} chunks`);
   }
 
-  // Embed messages — chunk long ones on the fly before each batch
-  const messages = db.getUnembeddedMessages(batchLimit);
-  // Pre-fetch chunk count for unified progress tracking
-  const existingChunks = db.getUnembeddedChunks(batchLimit);
-  const totalItems = messages.length + existingChunks.length;
+  // Shared budget: messages first, then chunks with whatever remains
+  let remaining = batchLimit;
   let doneTotal = 0;
   const embedStart = Date.now();
 
+  // Embed messages — chunk long ones on the fly before each batch
+  const messages = db.getUnembeddedMessages(remaining);
+  const totalItems = messages.length + Math.min(remaining - messages.length, db.getUnembeddedChunks(1).length > 0 ? remaining - messages.length : 0);
+
   function reportProgress() {
     if (!options.onProgress || totalItems === 0) return;
-    const pct = Math.round((doneTotal / totalItems) * 100);
+    const pct = Math.round((doneTotal / Math.max(totalItems, doneTotal)) * 100);
     const elapsed = Date.now() - embedStart;
     const msPerItem = elapsed / (doneTotal || 1);
-    const remaining = totalItems - doneTotal;
-    const etaMs = Date.now() + msPerItem * remaining;
+    const left = Math.max(totalItems, doneTotal) - doneTotal;
+    const etaMs = Date.now() + msPerItem * left;
     options.onProgress(pct, new Date(etaMs).toISOString());
   }
 
@@ -147,6 +148,7 @@ export async function runEmbed(
       },
       (done, failed) => { doneTotal = done + failed; reportProgress(); },
     );
+    remaining -= r.done + r.failed;
     doneTotal = r.done + r.failed;
     reportProgress();
     if (!options.quiet) {
@@ -156,25 +158,27 @@ export async function runEmbed(
     console.log("All messages already embedded.");
   }
 
-  // Embed chunks (re-fetch since chunking during messages phase may have created new ones)
-  const chunks = db.getUnembeddedChunks(batchLimit);
-  if (chunks.length > 0) {
-    const msgDone = doneTotal;
-    const r = await embedItems(
-      chunks,
-      (id, emb) => db.insertChunkEmbedding(id, emb),
-      "chunks",
-      !!options.quiet,
-      undefined,
-      (done, failed) => { doneTotal = msgDone + done + failed; reportProgress(); },
-    );
-    doneTotal = msgDone + r.done + r.failed;
-    reportProgress();
-    if (!options.quiet) {
-      console.log(`Chunks: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);
+  // Embed chunks with remaining budget (re-fetch since chunking may have created new ones)
+  if (remaining > 0) {
+    const chunks = db.getUnembeddedChunks(remaining);
+    if (chunks.length > 0) {
+      const msgDone = doneTotal;
+      const r = await embedItems(
+        chunks,
+        (id, emb) => db.insertChunkEmbedding(id, emb),
+        "chunks",
+        !!options.quiet,
+        undefined,
+        (done, failed) => { doneTotal = msgDone + done + failed; reportProgress(); },
+      );
+      doneTotal = msgDone + r.done + r.failed;
+      reportProgress();
+      if (!options.quiet) {
+        console.log(`Chunks: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);
+      }
+    } else if (!options.quiet) {
+      console.log("All chunks already embedded.");
     }
-  } else if (!options.quiet) {
-    console.log("All chunks already embedded.");
   }
 
   if (!options.quiet) {

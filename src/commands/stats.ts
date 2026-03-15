@@ -15,7 +15,7 @@ export function runStats(db: TraulDB, options: { json?: boolean }): void {
   console.log(`Contacts:           ${stats.total_contacts}`);
   console.log(`Chunks:             ${stats.total_chunks}`);
   console.log(`Embed model:        ${EMBED_MODEL} (${EMBED_DIMS}d)`);
-  console.log(`Msg embeddings:     ${stats.embedded_messages} / ${stats.total_messages}`);
+  console.log(`Msg embeddings:     ${stats.embedded_messages} / ${stats.embeddable_messages}`);
   console.log(`Chunk embeddings:   ${stats.embedded_chunks} / ${stats.total_chunks}`);
 }
 

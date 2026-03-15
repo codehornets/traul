@@ -710,6 +710,7 @@ export class TraulDB {
     total_messages: number;
     total_channels: number;
     total_contacts: number;
+    embeddable_messages: number;
     embedded_messages: number;
     total_chunks: number;
     embedded_chunks: number;
@@ -728,6 +729,7 @@ export class TraulDB {
     return {
       db_size,
       ...stats,
+      embeddable_messages: embStats.total_messages,
       embedded_messages: embStats.embedded_messages,
       total_chunks: chunkStats.total_chunks,
       embedded_chunks: chunkStats.embedded_chunks,
