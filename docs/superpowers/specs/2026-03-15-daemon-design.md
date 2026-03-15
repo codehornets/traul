@@ -14,15 +14,17 @@ A long-running background process (`traul daemon`) that continuously syncs all c
 Starts the daemon. Foreground by default, `--detach` flag for background mode.
 
 - Foreground: logs to stdout/stderr, Ctrl+C to stop
-- Detached: writes PID to `~/.local/share/traul/daemon.pid`, logs to stdout (redirect externally)
+- Detached: writes PID to `~/.local/share/traul/daemon.pid`, logs to `~/.local/share/traul/daemon.log`
+
+**Duplicate prevention:** On start, checks for existing PID file. If PID file exists and process is alive (`kill -0`), refuses to start with error message. Stale PID files (process dead) are cleaned up automatically.
 
 ### `traul daemon stop`
 
-Reads PID file, sends SIGTERM. Daemon performs graceful shutdown (waits up to 10s for running syncs).
+Reads PID file, sends SIGTERM. Daemon performs graceful shutdown (waits up to 10s for running syncs). Exit code 0 if stopped, 1 if not running.
 
 ### `traul daemon status`
 
-Checks PID file existence + queries health endpoint. Displays per-source last run times and status.
+Checks PID file existence + queries health endpoint. Displays per-source last run times and status. Exit code 0 if running, 1 if not running. If health endpoint is unreachable but PID exists, reports "running (health unavailable)".
 
 ## Scheduler
 
@@ -55,6 +57,8 @@ On startup, all sources fire immediately in priority order with 2s stagger to av
 8. Embed (+14s)
 
 Messengers fire first — most urgent communications get indexed first.
+
+**Note:** Embed runs independently of sync. If all syncs fail, embed still runs (it will simply find no new unembedded messages). No coupling between sync and embed scheduling.
 
 ### Configuration
 
@@ -116,11 +120,17 @@ Response:
 
 ### Transient API errors (rate limits, timeouts, network)
 
-Exponential backoff per source: 1min → 2min → 4min → max 30min. Resets to normal interval on successful run.
+Exponential backoff per source: 1min → 2min → 4min → max 30min. Resets to normal interval on successful run. Backoff state is in-memory only — resets on daemon restart.
+
+**Error classification:** Connectors throw errors normally. The scheduler classifies by type: network/timeout/rate-limit errors → transient (backoff). Auth/config errors (status 401, 403, missing token) → persistent (no backoff). Unknown errors → treated as transient.
 
 ### Persistent errors (auth failure, missing config)
 
 Log error, skip this cycle, retry at normal interval. No backoff — these need manual intervention.
+
+### Port conflict (health endpoint)
+
+If the configured port is occupied, log a warning and start the daemon without the health endpoint. The daemon is still functional — `traul daemon status` falls back to PID-only check.
 
 ### Ollama down (embed)
 
