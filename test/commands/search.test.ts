@@ -57,4 +57,28 @@ describe("Search command logic", () => {
     expect(results.length).toBe(1);
     expect(results[0].author_name).toBe("carol");
   });
+
+  it("filters by channel substring", () => {
+    db.upsertMessage({
+      source: "markdown",
+      source_id: "book:1",
+      channel_name: "books/books",
+      author_name: "The Lean Startup",
+      content: "Build measure learn is the core feedback loop",
+      sent_at: 1700000300,
+    });
+
+    // Exact prefix should match
+    const results = db.searchMessages("feedback", { channel: "books" });
+    expect(results.length).toBe(1);
+    expect(results[0].channel_name).toBe("books/books");
+
+    // Full name should also match
+    const results2 = db.searchMessages("feedback", { channel: "books/books" });
+    expect(results2.length).toBe(1);
+
+    // Non-matching substring should return nothing
+    const results3 = db.searchMessages("feedback", { channel: "slack" });
+    expect(results3.length).toBe(0);
+  });
 });

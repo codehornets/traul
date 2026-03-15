@@ -33,7 +33,19 @@ export async function runSearch(
 
   let results;
   if (options.fts) {
-    results = db.searchMessages(query, searchOpts);
+    // Merge message FTS + chunk FTS results
+    const msgResults = db.searchMessages(query, searchOpts);
+    const chunkResults = db.searchChunks(query, searchOpts);
+    const seen = new Set<string>();
+    results = [];
+    for (const r of [...msgResults, ...chunkResults]) {
+      const key = `${r.id}:${r.content.slice(0, 50)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(r);
+      }
+    }
+    results = results.slice(0, limit);
   } else {
     // Hybrid by default, fall back to FTS if Ollama is unavailable
     try {

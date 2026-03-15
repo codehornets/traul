@@ -12,6 +12,53 @@ function formatDuration(ms: number): string {
   return `${hrs}h ${remMins}m`;
 }
 
+async function embedItems(
+  items: Array<{ id: number; content: string }>,
+  insertFn: (id: number, embedding: Uint8Array) => void,
+  label: string,
+  quiet: boolean
+): Promise<{ done: number; failed: number; elapsed: number }> {
+  let done = 0;
+  let failed = 0;
+  const startTime = Date.now();
+
+  if (!quiet) {
+    console.log(`Embedding ${items.length} ${label}...`);
+  }
+
+  for (const item of items) {
+    try {
+      const vec = await embed(item.content);
+      insertFn(item.id, vecToBytes(vec));
+      done++;
+    } catch (err) {
+      failed++;
+      if (!quiet) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`\n  ! ${label} ${item.id}: ${errMsg}\n`);
+      }
+    }
+
+    if (!quiet && (done + failed) % 25 === 0) {
+      const elapsed = Date.now() - startTime;
+      const processed = done + failed;
+      const msPerMsg = elapsed / processed;
+      const remaining = items.length - processed;
+      const eta = formatDuration(msPerMsg * remaining);
+      const pct = Math.round((processed / items.length) * 100);
+      process.stdout.write(
+        `\r  ${processed}/${items.length} (${pct}%)  ${done} ok, ${failed} err  ETA: ${eta}   `
+      );
+    }
+  }
+
+  if (!quiet && items.length > 0) {
+    process.stdout.write("\r" + " ".repeat(80) + "\r");
+  }
+
+  return { done, failed, elapsed: Date.now() - startTime };
+}
+
 export async function runEmbed(
   db: TraulDB,
   options: { limit?: string; quiet?: boolean }
@@ -19,64 +66,53 @@ export async function runEmbed(
   const batchLimit = options.limit ? parseInt(options.limit, 10) : 500;
 
   const orphaned = db.deleteOrphanedEmbeddings();
-  if (orphaned > 0 && !options.quiet) {
-    console.log(`Cleaned ${orphaned} orphaned embeddings.`);
+  const orphanedChunks = db.deleteOrphanedChunkEmbeddings();
+  if (!options.quiet && (orphaned > 0 || orphanedChunks > 0)) {
+    console.log(`Cleaned ${orphaned} orphaned message embeddings, ${orphanedChunks} orphaned chunk embeddings.`);
   }
 
   const stats = db.getEmbeddingStats();
+  const chunkStats = db.getChunkEmbeddingStats();
 
   if (!options.quiet) {
-    console.log(
-      `Embeddings: ${stats.embedded_messages}/${stats.total_messages} messages`
-    );
+    console.log(`Embeddings: ${stats.embedded_messages}/${stats.total_messages} messages, ${chunkStats.embedded_chunks}/${chunkStats.total_chunks} chunks`);
   }
 
+  // Embed messages
   const messages = db.getUnembeddedMessages(batchLimit);
-  if (messages.length === 0) {
-    if (!options.quiet) console.log("All messages already embedded.");
-    return;
-  }
-
-  if (!options.quiet) {
-    console.log(`Embedding ${messages.length} messages...`);
-  }
-
-  let done = 0;
-  let failed = 0;
-  const startTime = Date.now();
-
-  for (const msg of messages) {
-    try {
-      const vec = await embed(msg.content);
-      db.insertEmbedding(msg.id, vecToBytes(vec));
-      done++;
-    } catch (err) {
-      failed++;
-      if (!options.quiet) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`\n  ! msg ${msg.id}: ${errMsg}\n`);
-      }
-    }
-
-    if (!options.quiet && (done + failed) % 25 === 0) {
-      const elapsed = Date.now() - startTime;
-      const processed = done + failed;
-      const msPerMsg = elapsed / processed;
-      const remaining = messages.length - processed;
-      const eta = formatDuration(msPerMsg * remaining);
-      const pct = Math.round((processed / messages.length) * 100);
-      process.stdout.write(
-        `\r  ${processed}/${messages.length} (${pct}%)  ${done} ok, ${failed} err  ETA: ${eta}   `
-      );
-    }
-  }
-
-  if (!options.quiet) {
-    const elapsed = formatDuration(Date.now() - startTime);
-    const updated = db.getEmbeddingStats();
-    process.stdout.write("\r" + " ".repeat(80) + "\r");
-    console.log(
-      `Done in ${elapsed}. ${done} embedded, ${failed} failed. Total: ${updated.embedded_messages}/${updated.total_messages}`
+  if (messages.length > 0) {
+    const r = await embedItems(
+      messages,
+      (id, emb) => db.insertEmbedding(id, emb),
+      "messages",
+      !!options.quiet
     );
+    if (!options.quiet) {
+      console.log(`Messages: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);
+    }
+  } else if (!options.quiet) {
+    console.log("All messages already embedded.");
+  }
+
+  // Embed chunks
+  const chunks = db.getUnembeddedChunks(batchLimit);
+  if (chunks.length > 0) {
+    const r = await embedItems(
+      chunks,
+      (id, emb) => db.insertChunkEmbedding(id, emb),
+      "chunks",
+      !!options.quiet
+    );
+    if (!options.quiet) {
+      console.log(`Chunks: ${r.done} embedded, ${r.failed} failed in ${formatDuration(r.elapsed)}.`);
+    }
+  } else if (!options.quiet) {
+    console.log("All chunks already embedded.");
+  }
+
+  if (!options.quiet) {
+    const updated = db.getEmbeddingStats();
+    const updatedChunks = db.getChunkEmbeddingStats();
+    console.log(`Total: ${updated.embedded_messages}/${updated.total_messages} messages, ${updatedChunks.embedded_chunks}/${updatedChunks.total_chunks} chunks`);
   }
 }

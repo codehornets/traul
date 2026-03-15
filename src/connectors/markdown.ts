@@ -5,6 +5,7 @@ import { createHash } from "crypto";
 import type { Connector, SyncResult } from "./types";
 import type { TraulDB } from "../db/database";
 import type { TraulConfig } from "../lib/config";
+import { shouldChunk, chunkText } from "../lib/chunker";
 import * as log from "../lib/logger";
 
 function walkMarkdown(dir: string): string[] {
@@ -91,20 +92,30 @@ export const markdownConnector: Connector = {
         const channelName = channelFromPath(filePath, dir);
         const title = basename(filePath, ".md");
 
-        // Truncate very large files
-        const body = content.length > 8000
-          ? content.slice(0, 8000) + "\n\n[... truncated]"
-          : content;
-
         db.upsertMessage({
           source: "markdown",
           source_id: sourceId,
           channel_name: channelName,
           author_name: title,
-          content: body,
+          content: content,
           sent_at: mtime,
           metadata: JSON.stringify({ path: relPath }),
         });
+
+        // Chunk large files for better search coverage
+        if (shouldChunk(content)) {
+          const msgRow = db.db
+            .query<{ id: number }, [string, string]>(
+              "SELECT id FROM messages WHERE source = ? AND source_id = ?"
+            )
+            .get("markdown", sourceId);
+          if (msgRow) {
+            const chunks = chunkText(content, { docTitle: title });
+            db.replaceChunks(msgRow.id, chunks);
+            log.info(`    ${title}: ${chunks.length} chunks`);
+          }
+        }
+
         result.messagesAdded++;
         synced++;
 

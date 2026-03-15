@@ -25,7 +25,23 @@ export function formatStats(stats: Stats): string {
   ].join("\n");
 }
 
+function sanitizeContent(content: string, maxLen: number = 500): string {
+  // Strip null bytes and control characters (keep newlines/tabs)
+  const clean = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  if (clean.length <= maxLen) return clean;
+  return clean.slice(0, maxLen) + "...";
+}
+
 export function formatJSON(data: unknown): string {
+  // Sanitize message content to prevent JSON parse issues with piped output
+  if (Array.isArray(data)) {
+    data = data.map((item: Record<string, unknown>) => {
+      if (item && typeof item === "object" && typeof item.content === "string") {
+        return { ...item, content: sanitizeContent(item.content) };
+      }
+      return item;
+    });
+  }
   return JSON.stringify(data, null, 2);
 }
 

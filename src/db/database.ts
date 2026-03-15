@@ -134,8 +134,8 @@ export class TraulDB {
       params.push(options.source);
     }
     if (options?.channel) {
-      conditions.push("m.channel_name = ?");
-      params.push(options.channel);
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
     }
     if (options?.after) {
       conditions.push("m.sent_at > ?");
@@ -264,8 +264,8 @@ export class TraulDB {
       params.push(options.source);
     }
     if (options?.channel) {
-      conditions.push("m.channel_name = ?");
-      params.push(options.channel);
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
     }
     if (options?.after) {
       conditions.push("m.sent_at > ?");
@@ -394,8 +394,8 @@ export class TraulDB {
       params.push(options.source);
     }
     if (options?.channel) {
-      conditions.push("m.channel_name = ?");
-      params.push(options.channel);
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
     }
     if (options?.after) {
       conditions.push("m.sent_at > ?");
@@ -435,8 +435,8 @@ export class TraulDB {
       params.push(options.source);
     }
     if (options?.channel) {
-      conditions.push("m.channel_name = ?");
-      params.push(options.channel);
+      conditions.push("m.channel_name LIKE ?");
+      params.push(`%${options.channel}%`);
     }
     if (options?.after) {
       conditions.push("m.sent_at > ?");
