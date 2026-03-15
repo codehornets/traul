@@ -59,6 +59,34 @@ async function discordFetch(
   }
 }
 
+export function filterGuilds(
+  guilds: Array<{ id: string; name: string }>,
+  servers: { allowlist: string[]; stoplist: string[] }
+): Array<{ id: string; name: string }> {
+  let filtered = guilds;
+  if (servers.allowlist.length > 0) {
+    filtered = filtered.filter((g) => servers.allowlist.includes(g.id));
+  }
+  if (servers.stoplist.length > 0) {
+    filtered = filtered.filter((g) => !servers.stoplist.includes(g.id));
+  }
+  return filtered;
+}
+
+export function filterChannels(
+  channels: Array<{ id: string }>,
+  filters: { allowlist: string[]; stoplist: string[] }
+): Array<{ id: string }> {
+  let filtered = channels;
+  if (filters.allowlist.length > 0) {
+    filtered = filtered.filter((c) => filters.allowlist.includes(c.id));
+  }
+  if (filters.stoplist.length > 0) {
+    filtered = filtered.filter((c) => !filters.stoplist.includes(c.id));
+  }
+  return filtered;
+}
+
 export const discordConnector: Connector = {
   name: "discord",
 
@@ -119,12 +147,7 @@ export const discordConnector: Connector = {
 
     // Apply server filters
     const { servers, channels: channelFilters } = config.discord;
-    if (servers.allowlist.length > 0) {
-      guilds = guilds.filter((g) => servers.allowlist.includes(g.id));
-    }
-    if (servers.stoplist.length > 0) {
-      guilds = guilds.filter((g) => !servers.stoplist.includes(g.id));
-    }
+    guilds = filterGuilds(guilds, servers);
 
     log.info(`Found ${guilds.length} servers to sync`);
 
@@ -185,13 +208,7 @@ export const discordConnector: Connector = {
     }
 
     // Apply channel filters
-    let filteredChannels = allChannels;
-    if (channelFilters.allowlist.length > 0) {
-      filteredChannels = filteredChannels.filter((c) => channelFilters.allowlist.includes(c.id));
-    }
-    if (channelFilters.stoplist.length > 0) {
-      filteredChannels = filteredChannels.filter((c) => !channelFilters.stoplist.includes(c.id));
-    }
+    const filteredChannels = filterChannels(allChannels, channelFilters) as ChannelInfo[];
 
     log.info(`Syncing ${filteredChannels.length} channels...`);
 
