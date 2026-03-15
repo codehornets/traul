@@ -8,7 +8,7 @@ const DISCORD_EPOCH = 1420070400000n;
 const FLOOR_DELAY_MS = 100;
 const MAX_RETRIES = 5;
 
-function dateToSnowflake(date: Date): string {
+export function dateToSnowflake(date: Date): string {
   const ms = BigInt(date.getTime());
   return String((ms - DISCORD_EPOCH) << 22n);
 }
@@ -57,6 +57,22 @@ async function discordFetch(
 
     return resp;
   }
+}
+
+export function buildContent(msg: {
+  content: string;
+  attachments?: Array<{ filename: string }>;
+  embeds?: Array<{ title?: string }>;
+}): string {
+  if (msg.content) return msg.content;
+  const parts: string[] = [];
+  for (const att of msg.attachments ?? []) {
+    parts.push(`[attachment: ${att.filename}]`);
+  }
+  for (const emb of msg.embeds ?? []) {
+    if (emb.title) parts.push(`[embed: ${emb.title}]`);
+  }
+  return parts.join(" ");
 }
 
 export function filterGuilds(
@@ -281,17 +297,7 @@ export const discordConnector: Connector = {
           if (msg.type !== 0 && msg.type !== 19) continue;
 
           // Build content
-          let content = msg.content;
-          if (!content) {
-            const parts: string[] = [];
-            for (const att of msg.attachments ?? []) {
-              parts.push(`[attachment: ${att.filename}]`);
-            }
-            for (const emb of msg.embeds ?? []) {
-              if (emb.title) parts.push(`[embed: ${emb.title}]`);
-            }
-            content = parts.join(" ");
-          }
+          const content = buildContent(msg);
           if (!content) continue;
 
           const displayName = resolveContact(msg.author);

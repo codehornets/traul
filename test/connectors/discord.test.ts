@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { loadConfig } from "../../src/lib/config";
-import { discordConnector, filterGuilds, filterChannels } from "../../src/connectors/discord";
+import { discordConnector, filterGuilds, filterChannels, dateToSnowflake, buildContent } from "../../src/connectors/discord";
 import { TraulDB } from "../../src/db/database";
 
 describe("Discord config", () => {
@@ -54,6 +54,51 @@ describe("Discord filtering", () => {
     const channels = [{ id: "a" }, { id: "b" }, { id: "c" }];
     const result = filterChannels(channels, { allowlist: [], stoplist: ["b"] });
     expect(result.map((c) => c.id)).toEqual(["a", "c"]);
+  });
+});
+
+describe("Discord snowflake conversion", () => {
+  it("converts epoch to snowflake 0", () => {
+    const result = dateToSnowflake(new Date("2015-01-01T00:00:00.000Z"));
+    expect(result).toBe("0");
+  });
+
+  it("converts a known date to correct snowflake", () => {
+    const date = new Date("2025-01-01T00:00:00.000Z");
+    const expected = String((BigInt(date.getTime()) - 1420070400000n) << 22n);
+    expect(dateToSnowflake(date)).toBe(expected);
+  });
+});
+
+describe("Discord content building", () => {
+  it("returns content when present", () => {
+    expect(buildContent({ content: "hello" })).toBe("hello");
+  });
+
+  it("falls back to attachment filenames", () => {
+    expect(buildContent({
+      content: "",
+      attachments: [{ filename: "image.png" }],
+    })).toBe("[attachment: image.png]");
+  });
+
+  it("falls back to embed titles", () => {
+    expect(buildContent({
+      content: "",
+      embeds: [{ title: "Article" }],
+    })).toBe("[embed: Article]");
+  });
+
+  it("combines attachments and embeds", () => {
+    expect(buildContent({
+      content: "",
+      attachments: [{ filename: "doc.pdf" }],
+      embeds: [{ title: "Link Preview" }],
+    })).toBe("[attachment: doc.pdf] [embed: Link Preview]");
+  });
+
+  it("returns empty string when no content, attachments, or embeds", () => {
+    expect(buildContent({ content: "" })).toBe("");
   });
 });
 
