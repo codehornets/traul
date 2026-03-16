@@ -97,7 +97,7 @@ async function syncAccount(
   const gmail = google.gmail({ version: "v1", auth });
   const cursorKey = `${accountName}:all`;
   const existingCursor = db.getSyncCursor("gmail", cursorKey);
-  const syncStartTs = getSyncStartTimestamp(config);
+  const syncStartTs = getSyncStartTimestamp(config, "gmail");
   const afterEpochMs = existingCursor
     ? parseInt(existingCursor)
     : syncStartTs !== "0"

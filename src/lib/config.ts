@@ -80,6 +80,24 @@ function getDefaultConfig(): TraulConfig {
   };
 }
 
+export function deepMerge(target: any, source: any): void {
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    if (srcVal === null || srcVal === undefined) continue;
+    if (
+      typeof srcVal === "object" &&
+      !Array.isArray(srcVal) &&
+      typeof target[key] === "object" &&
+      !Array.isArray(target[key]) &&
+      target[key] !== null
+    ) {
+      deepMerge(target[key], srcVal);
+    } else {
+      target[key] = srcVal;
+    }
+  }
+}
+
 export function loadConfig(): TraulConfig {
   const defaults = getDefaultConfig();
 
@@ -88,43 +106,8 @@ export function loadConfig(): TraulConfig {
     try {
       const raw = readFileSync(CONFIG_PATH, "utf-8");
       parsed = JSON.parse(raw);
-      defaults.sync_start = parsed.sync_start ?? defaults.sync_start;
-      defaults.database.path = parsed.database?.path ?? defaults.database.path;
-      defaults.slack.token = parsed.slack?.token ?? defaults.slack.token;
-      defaults.slack.cookie = parsed.slack?.cookie ?? defaults.slack.cookie;
-      defaults.slack.my_user_id =
-        parsed.slack?.my_user_id ?? defaults.slack.my_user_id;
-      defaults.slack.channels =
-        parsed.slack?.channels ?? defaults.slack.channels;
-      defaults.telegram.api_id =
-        parsed.telegram?.api_id ?? defaults.telegram.api_id;
-      defaults.telegram.api_hash =
-        parsed.telegram?.api_hash ?? defaults.telegram.api_hash;
-      defaults.telegram.session_path =
-        parsed.telegram?.session_path ?? defaults.telegram.session_path;
-      defaults.telegram.chats =
-        parsed.telegram?.chats ?? defaults.telegram.chats;
-      defaults.linear.api_key =
-        parsed.linear?.api_key ?? defaults.linear.api_key;
-      defaults.linear.teams =
-        parsed.linear?.teams ?? defaults.linear.teams;
-      defaults.linear.workspaces =
-        parsed.linear?.workspaces ?? defaults.linear.workspaces;
-      defaults.markdown.dirs =
-        parsed.markdown?.dirs ?? defaults.markdown.dirs;
-      // Gmail
-      defaults.gmail.client_id = parsed.gmail?.client_id ?? defaults.gmail.client_id;
-      defaults.gmail.client_secret = parsed.gmail?.client_secret ?? defaults.gmail.client_secret;
-      defaults.gmail.refresh_token = parsed.gmail?.refresh_token ?? defaults.gmail.refresh_token;
-      defaults.gmail.accounts = parsed.gmail?.accounts ?? defaults.gmail.accounts;
-      // WhatsApp
-      defaults.whatsapp.instances = parsed.whatsapp?.instances ?? defaults.whatsapp.instances;
-      // Discord
-      defaults.discord.token = parsed.discord?.token ?? defaults.discord.token;
-      defaults.discord.servers.allowlist = parsed.discord?.servers?.allowlist ?? defaults.discord.servers.allowlist;
-      defaults.discord.servers.stoplist = parsed.discord?.servers?.stoplist ?? defaults.discord.servers.stoplist;
-      defaults.discord.channels.allowlist = parsed.discord?.channels?.allowlist ?? defaults.discord.channels.allowlist;
-      defaults.discord.channels.stoplist = parsed.discord?.channels?.stoplist ?? defaults.discord.channels.stoplist;
+      _rawParsed = parsed;
+      deepMerge(defaults, parsed);
     } catch {
       // ignore malformed config, use defaults
     }
@@ -192,15 +175,31 @@ export function loadConfig(): TraulConfig {
   return defaults;
 }
 
-export function getSyncStartTimestamp(config: TraulConfig): string {
-  if (!config.sync_start) {
+export function getSyncStartTimestamp(config: TraulConfig, connector?: string): string {
+  // Check per-connector sync_start first
+  let raw = "";
+  if (connector) {
+    const section = _rawParsed[connector];
+    if (section?.sync_start) raw = section.sync_start;
+  }
+  if (!raw) raw = config.sync_start;
+  if (!raw) {
     // Default: 30 days ago
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     return String(Math.floor(thirtyDaysAgo / 1000));
   }
-  const ts = Math.floor(new Date(config.sync_start).getTime() / 1000);
+  const ts = Math.floor(new Date(raw).getTime() / 1000);
   if (isNaN(ts)) return "0";
   return String(ts);
+}
+
+/** Raw parsed config for per-connector overrides */
+let _rawParsed: Record<string, any> = {};
+export function getRawParsedConfig(): Record<string, any> {
+  return _rawParsed;
+}
+export function setRawParsedConfig(val: Record<string, any>): void {
+  _rawParsed = val;
 }
 
 export function ensureDbDir(dbPath: string): void {
