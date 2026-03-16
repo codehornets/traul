@@ -50,6 +50,8 @@ program
   .option("-b, --before <date>", "messages before date (ISO 8601)")
   .option("--from <date>", "alias for --after")
   .option("--to <date>", "alias for --before")
+  .option("--start <date>", "alias for --after")
+  .option("--end <date>", "alias for --before")
   .option("-l, --limit <n>", "max results", "20")
   .option("--json", "output as JSON")
   .option(
@@ -62,8 +64,8 @@ program
     "substring match (LIKE) — bypasses FTS, useful for exact phrases"
   )
   .action(async (query: string, options) => {
-    options.after = options.after || options.from;
-    options.before = options.before || options.to;
+    options.after = options.after || options.from || options.start;
+    options.before = options.before || options.to || options.end;
     await runSearch(db, query, options);
     db.close();
   });
@@ -79,12 +81,14 @@ program
   .option("--before <date>", "messages before ISO date")
   .option("--from <date>", "alias for --after")
   .option("--to <date>", "alias for --before")
+  .option("--start <date>", "alias for --after")
+  .option("--end <date>", "alias for --before")
   .option("-l, --limit <n>", "max results (default: 50)")
   .option("--json", "output as JSON")
   .option("--asc", "oldest first")
   .action((channel: string | undefined, options) => {
-    options.after = options.after || options.from;
-    options.before = options.before || options.to;
+    options.after = options.after || options.from || options.start;
+    options.before = options.before || options.to || options.end;
     runMessages(db, channel, options);
     db.close();
   });
