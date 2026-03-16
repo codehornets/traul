@@ -217,6 +217,16 @@ export const LIKE_SEARCH_CHUNKS = `
   WHERE c.content LIKE '%' || ? || '%'
 `;
 
+export const GET_UNCHUNKED_LONG_MESSAGES = `
+  SELECT m.id, m.content
+  FROM messages m
+  WHERE length(m.content) > ?
+    AND m.id IN (SELECT message_id FROM vec_messages)
+    AND m.id NOT IN (SELECT DISTINCT message_id FROM chunks)
+  ORDER BY m.id DESC
+  LIMIT ?
+`;
+
 export const GET_CHANNELS = `
   SELECT source, channel_name,
          COUNT(*) AS msg_count,

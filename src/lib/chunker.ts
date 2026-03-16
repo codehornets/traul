@@ -12,7 +12,7 @@ export interface Chunk {
 
 const DEFAULT_CHUNK_SIZE = 1500;
 const DEFAULT_OVERLAP = 200;
-const CHUNK_THRESHOLD = 2000;
+export const CHUNK_THRESHOLD = 2000;
 
 export function shouldChunk(text: string, threshold: number = CHUNK_THRESHOLD): boolean {
   return text.length > threshold;

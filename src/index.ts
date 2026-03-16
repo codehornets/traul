@@ -106,6 +106,7 @@ program
   .description("Generate vector embeddings for messages (requires Ollama)")
   .option("-l, --limit <n>", "max messages to embed per run (0 = all)", "500")
   .option("-q, --quiet", "minimal output")
+  .option("--rechunk", "re-chunk long messages that were embedded whole (pre-chunking)")
   .action(async (options) => {
     await runEmbed(db, options);
     db.close();

@@ -1,6 +1,6 @@
 import type { TraulDB } from "../db/database";
 import { embedBatch, vecToBytes, BATCH_SIZE } from "../lib/embeddings";
-import { shouldChunk, chunkText } from "../lib/chunker";
+import { shouldChunk, chunkText, CHUNK_THRESHOLD } from "../lib/chunker";
 
 function formatDuration(ms: number): string {
   const secs = Math.floor(ms / 1000);
@@ -99,10 +99,23 @@ async function embedItems(
 
 export async function runEmbed(
   db: TraulDB,
-  options: { limit?: string; quiet?: boolean; onProgress?: (pct: number, eta: string | null) => void }
+  options: { limit?: string; quiet?: boolean; rechunk?: boolean; onProgress?: (pct: number, eta: string | null) => void }
 ): Promise<void> {
   const parsed = options.limit ? parseInt(options.limit, 10) : 500;
   const batchLimit = parsed === 0 ? 999999 : parsed;
+
+  // Rechunk: find long messages embedded whole (pre-chunking) and convert them to chunks
+  if (options.rechunk) {
+    const unchunked = db.getUnchunkedLongMessages(CHUNK_THRESHOLD, batchLimit);
+    for (const msg of unchunked) {
+      db.deleteMessageEmbedding(msg.id);
+      const chunks = chunkText(msg.content);
+      db.replaceChunks(msg.id, chunks);
+    }
+    if (!options.quiet) {
+      console.log(`Rechunked ${unchunked.length} long messages into chunks.`);
+    }
+  }
 
   const orphanedChunksData = db.deleteOrphanedChunks();
   const orphaned = db.deleteOrphanedEmbeddings();

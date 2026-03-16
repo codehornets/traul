@@ -604,6 +604,16 @@ export class TraulDB {
     }
   }
 
+  getUnchunkedLongMessages(threshold: number, limit: number): Array<{ id: number; content: string }> {
+    return this.db
+      .query<{ id: number; content: string }, [number, number]>(Q.GET_UNCHUNKED_LONG_MESSAGES)
+      .all(threshold, limit);
+  }
+
+  deleteMessageEmbedding(messageId: number): void {
+    this.db.run("DELETE FROM vec_messages WHERE message_id = ?", [messageId]);
+  }
+
   getUnembeddedChunks(limit: number = 100): Array<{ id: number; content: string }> {
     return this.db
       .query<{ id: number; content: string }, [number]>(Q.GET_UNEMBEDDED_CHUNKS)
