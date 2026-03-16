@@ -11,6 +11,7 @@ import { runEmbed } from "./commands/embed";
 import { runStats } from "./commands/stats";
 import { runWhatsAppAuth } from "./commands/whatsapp-auth";
 import { runDaemonStart, runDaemonStop, runDaemonStatus } from "./commands/daemon";
+import { runSql, runSchema } from "./commands/sql";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
@@ -132,6 +133,51 @@ program
     console.log(`Resetting vec tables to ${EMBED_DIMS} dimensions...`);
     db.resetEmbeddings(EMBED_DIMS);
     console.log("Done. Run 'traul embed' to regenerate embeddings.");
+    db.close();
+  });
+
+program
+  .command("sql")
+  .description("Execute a read-only SQL query against the database")
+  .argument("<query>", "SQL query (SELECT, PRAGMA, WITH, EXPLAIN only)")
+  .option("--json", "output as JSON (default)")
+  .option("--write", "allow write operations (INSERT, UPDATE, DELETE, etc.)")
+  .action(async (query: string, options) => {
+    const result = runSql(db, query, { write: options.write });
+    if (options.json !== false) {
+      const output = JSON.stringify(result, null, 2);
+      process.stdout.write(output + "\n");
+    } else {
+      if (Array.isArray(result)) {
+        console.table(result);
+      } else {
+        console.log(`${result.changes} row(s) affected`);
+      }
+    }
+    db.close();
+  });
+
+program
+  .command("schema")
+  .description("Show database schema (tables and columns)")
+  .option("--json", "output as JSON")
+  .action(async (options) => {
+    const tables = runSchema(db);
+    if (options.json) {
+      const output = JSON.stringify(tables, null, 2);
+      process.stdout.write(output + "\n");
+    } else {
+      for (const t of tables) {
+        console.log(`\n${t.name} (${t.type})`);
+        if (t.columns.length > 0) {
+          for (const c of t.columns) {
+            const pk = c.pk ? " PK" : "";
+            const nn = c.notnull ? " NOT NULL" : "";
+            console.log(`  ${c.name} ${c.type}${pk}${nn}`);
+          }
+        }
+      }
+    }
     db.close();
   });
 

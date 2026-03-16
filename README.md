@@ -135,6 +135,15 @@ traul channels --search general --json
 traul messages general --limit 50
 traul messages --channel general --author john --after 2025-01-01 --asc
 
+# Ad-hoc SQL queries (read-only by default)
+traul sql "SELECT source, COUNT(*) as cnt FROM messages GROUP BY source"
+traul sql "SELECT * FROM sync_cursors" --json
+traul sql "UPDATE messages SET channel_name='new' WHERE channel_name='old'" --write
+
+# Explore database schema
+traul schema
+traul schema --json
+
 # Database statistics
 traul stats
 traul stats --json
