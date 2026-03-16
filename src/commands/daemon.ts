@@ -63,6 +63,9 @@ export async function runDaemonStart(
   const enabled = allNames.filter((s) => credsPresent[s]);
   const missing = allNames.filter((s) => !credsPresent[s]);
 
+  // Embed is a built-in task, not a connector — always schedule it
+  enabled.push("embed");
+
   log.info(`Configured sources: ${enabled.join(", ")}`);
   if (missing.length > 0) {
     log.info(`Missing credentials: ${missing.join(", ")}`);
