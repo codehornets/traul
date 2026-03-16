@@ -1,5 +1,5 @@
 import type { TraulDB } from "../db/database";
-import { formatMessage, formatJSON } from "../lib/formatter";
+import { formatMessage, writeJSON } from "../lib/formatter";
 import { embed, vecToBytes } from "../lib/embeddings";
 
 export async function runSearch(
@@ -72,7 +72,7 @@ export async function runSearch(
       source: msg.source,
       ...(msg.rank != null ? { rank: msg.rank } : {}),
     }));
-    console.log(formatJSON(jsonData));
+    await writeJSON(jsonData);
   } else {
     for (const msg of results) {
       console.log(formatMessage(msg));

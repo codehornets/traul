@@ -1,18 +1,18 @@
 import type { TraulDB } from "../db/database";
-import { formatJSON } from "../lib/formatter";
+import { writeJSON } from "../lib/formatter";
 
 function formatDate(unixTs: number): string {
   return new Date(unixTs * 1000).toISOString().slice(0, 10);
 }
 
-export function runChannels(
+export async function runChannels(
   db: TraulDB,
   options: {
     source?: string;
     search?: string;
     json?: boolean;
   }
-): void {
+): Promise<void> {
   const results = db.getChannels({
     source: options.source,
     search: options.search,
@@ -30,7 +30,7 @@ export function runChannels(
       message_count: ch.msg_count,
       last_activity: new Date(ch.last_message * 1000).toISOString(),
     }));
-    console.log(formatJSON(jsonData));
+    await writeJSON(jsonData);
   } else {
     for (const ch of results) {
       const source = ch.source.padEnd(12);

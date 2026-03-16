@@ -1,11 +1,11 @@
 import type { TraulDB } from "../db/database";
-import { formatJSON } from "../lib/formatter";
+import { writeJSON } from "../lib/formatter";
 
 function formatTimestamp(unixTs: number): string {
   return new Date(unixTs * 1000).toISOString().replace("T", " ").slice(0, 16);
 }
 
-export function runMessages(
+export async function runMessages(
   db: TraulDB,
   channel: string | undefined,
   options: {
@@ -18,7 +18,7 @@ export function runMessages(
     json?: boolean;
     asc?: boolean;
   }
-): void {
+): Promise<void> {
   const limit = options.limit ? parseInt(options.limit, 10) : 50;
   const after = options.after
     ? Math.floor(new Date(options.after).getTime() / 1000)
@@ -51,7 +51,7 @@ export function runMessages(
       channel: msg.channel_name,
       source: msg.source,
     }));
-    console.log(formatJSON(jsonData));
+    await writeJSON(jsonData);
   } else {
     for (const msg of results) {
       const time = formatTimestamp(msg.sent_at);

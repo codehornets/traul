@@ -86,10 +86,10 @@ program
   .option("-l, --limit <n>", "max results (default: 50)")
   .option("--json", "output as JSON")
   .option("--asc", "oldest first")
-  .action((channel: string | undefined, options) => {
+  .action(async (channel: string | undefined, options) => {
     options.after = options.after || options.from || options.start;
     options.before = options.before || options.to || options.end;
-    runMessages(db, channel, options);
+    await runMessages(db, channel, options);
     db.close();
   });
 
@@ -99,8 +99,8 @@ program
   .option("-s, --source <source>", "filter by source")
   .option("--search <term>", "substring search in channel name")
   .option("--json", "output as JSON")
-  .action((options) => {
-    runChannels(db, options);
+  .action(async (options) => {
+    await runChannels(db, options);
     db.close();
   });
 

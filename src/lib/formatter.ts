@@ -32,7 +32,7 @@ function sanitizeContent(content: string, maxLen: number = 500): string {
   return clean.slice(0, maxLen) + "...";
 }
 
-export function formatJSON(data: unknown): string {
+export function writeJSON(data: unknown): Promise<void> {
   // Sanitize message content to prevent JSON parse issues with piped output
   // No length truncation — JSON consumers expect full data
   if (Array.isArray(data)) {
@@ -43,6 +43,15 @@ export function formatJSON(data: unknown): string {
       return item;
     });
   }
-  return JSON.stringify(data, null, 2);
+  const json = JSON.stringify(data, null, 2) + "\n";
+  return new Promise<void>((resolve, reject) => {
+    const ok = process.stdout.write(json);
+    if (ok) {
+      resolve();
+    } else {
+      process.stdout.once("drain", resolve);
+      process.stdout.once("error", reject);
+    }
+  });
 }
 
