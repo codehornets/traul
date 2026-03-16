@@ -112,6 +112,7 @@ export const EMBEDDING_STATS = `
 export const DELETE_ORPHANED_EMBEDDINGS = `
   DELETE FROM vec_messages
   WHERE message_id NOT IN (SELECT id FROM messages)
+     OR message_id IN (SELECT DISTINCT message_id FROM chunks)
 `;
 
 // Chunk queries
