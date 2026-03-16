@@ -104,10 +104,11 @@ export async function runEmbed(
   const parsed = options.limit ? parseInt(options.limit, 10) : 500;
   const batchLimit = parsed === 0 ? 999999 : parsed;
 
+  const orphanedChunksData = db.deleteOrphanedChunks();
   const orphaned = db.deleteOrphanedEmbeddings();
   const orphanedChunks = db.deleteOrphanedChunkEmbeddings();
-  if (!options.quiet && (orphaned > 0 || orphanedChunks > 0)) {
-    console.log(`Cleaned ${orphaned} orphaned message embeddings, ${orphanedChunks} orphaned chunk embeddings.`);
+  if (!options.quiet && (orphanedChunksData > 0 || orphaned > 0 || orphanedChunks > 0)) {
+    console.log(`Cleaned ${orphanedChunksData} orphaned chunks, ${orphaned} orphaned message embeddings, ${orphanedChunks} orphaned chunk embeddings.`);
   }
 
   const stats = db.getEmbeddingStats();

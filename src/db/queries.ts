@@ -143,6 +143,11 @@ export const DELETE_ORPHANED_CHUNK_EMBEDDINGS = `
   WHERE chunk_id NOT IN (SELECT id FROM chunks)
 `;
 
+export const DELETE_ORPHANED_CHUNKS = `
+  DELETE FROM chunks
+  WHERE message_id NOT IN (SELECT id FROM messages)
+`;
+
 export const SEARCH_CHUNKS_FILTERED = `
   SELECT m.id, m.source, m.source_id, m.channel_name, m.thread_id,
          m.author_name, c.content, m.sent_at, m.metadata,

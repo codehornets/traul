@@ -585,6 +585,10 @@ export class TraulDB {
     return this.db.run(Q.DELETE_ORPHANED_CHUNK_EMBEDDINGS).changes;
   }
 
+  deleteOrphanedChunks(): number {
+    return this.db.run(Q.DELETE_ORPHANED_CHUNKS).changes;
+  }
+
   replaceChunks(messageId: number, chunks: Array<{ index: number; content: string; embeddingInput: string }>): void {
     // Delete old chunk embeddings first
     const oldChunkIds = this.db
