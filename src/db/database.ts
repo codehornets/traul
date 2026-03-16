@@ -2,6 +2,17 @@ import { Database } from "bun:sqlite";
 import { initializeDatabase } from "./schema";
 import * as Q from "./queries";
 
+/**
+ * Sanitize user input for FTS5 MATCH queries.
+ * Wraps each token in double quotes so special characters
+ * (., *, +, -, :, ^, etc.) are treated as literals.
+ */
+export function sanitizeFtsQuery(raw: string): string {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return '""';
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(" ");
+}
+
 export interface MessageRow {
   id: number;
   source: string;
@@ -127,7 +138,7 @@ export class TraulDB {
   ): MessageRow[] {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (string | number)[] = [query];
+    const params: (string | number)[] = [sanitizeFtsQuery(query)];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -335,7 +346,7 @@ export class TraulDB {
   ): MessageRow[] {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (string | number)[] = [query];
+    const params: (string | number)[] = [sanitizeFtsQuery(query)];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -377,7 +388,7 @@ export class TraulDB {
   ): MessageRow[] {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (string | number)[] = [query];
+    const params: (string | number)[] = [sanitizeFtsQuery(query)];
 
     if (options?.source) {
       conditions.push("m.source = ?");
@@ -651,7 +662,7 @@ export class TraulDB {
   ): MessageRow[] {
     const limit = options?.limit ?? 20;
     const conditions: string[] = [];
-    const params: (string | number)[] = [query];
+    const params: (string | number)[] = [sanitizeFtsQuery(query)];
 
     if (options?.source) {
       conditions.push("m.source = ?");

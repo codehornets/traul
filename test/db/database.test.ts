@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { TraulDB } from "../../src/db/database";
+import { TraulDB, sanitizeFtsQuery } from "../../src/db/database";
 
 describe("TraulDB", () => {
   let db: TraulDB;
@@ -102,6 +102,38 @@ describe("TraulDB", () => {
       expect(results[0].channel_name).toBe("eng");
     });
 
+    it("handles special characters in queries (dots, colons, etc.)", () => {
+      db.upsertMessage({
+        source: "telegram",
+        source_id: "T1:1",
+        channel_name: "general",
+        author_name: "dan",
+        content: "Check out ask.fm for anonymous questions",
+        sent_at: 1700000000,
+      });
+
+      // Should not throw FTS5 syntax error
+      const results = db.searchMessages("ask.fm anonymous");
+      expect(results.length).toBe(1);
+      expect(results[0].content).toContain("ask.fm");
+    });
+
+    it("handles other FTS5 special chars without error", () => {
+      db.upsertMessage({
+        source: "slack",
+        source_id: "C1:99",
+        channel_name: "eng",
+        author_name: "bob",
+        content: "Use node:fs for file operations",
+        sent_at: 1700000000,
+      });
+
+      expect(() => db.searchMessages("node:fs")).not.toThrow();
+      expect(() => db.searchMessages("C++ programming")).not.toThrow();
+      expect(() => db.searchMessages("-flag --verbose")).not.toThrow();
+      expect(() => db.searchMessages("hello*world")).not.toThrow();
+    });
+
     it("respects limit", () => {
       for (let i = 0; i < 10; i++) {
         db.upsertMessage({
@@ -116,6 +148,30 @@ describe("TraulDB", () => {
 
       const results = db.searchMessages("testing", { limit: 3 });
       expect(results.length).toBe(3);
+    });
+  });
+
+  describe("sanitizeFtsQuery", () => {
+    it("quotes simple words", () => {
+      expect(sanitizeFtsQuery("hello world")).toBe('"hello" "world"');
+    });
+
+    it("escapes dots and special chars", () => {
+      expect(sanitizeFtsQuery("ask.fm")).toBe('"ask.fm"');
+    });
+
+    it("escapes embedded double quotes", () => {
+      expect(sanitizeFtsQuery('say "hello"')).toBe('"say" """hello"""');
+    });
+
+    it("handles empty/whitespace input", () => {
+      expect(sanitizeFtsQuery("")).toBe('""');
+      expect(sanitizeFtsQuery("   ")).toBe('""');
+    });
+
+    it("handles colons and operators", () => {
+      expect(sanitizeFtsQuery("node:fs")).toBe('"node:fs"');
+      expect(sanitizeFtsQuery("-flag")).toBe('"-flag"');
     });
   });
 
