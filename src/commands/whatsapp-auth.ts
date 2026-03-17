@@ -30,7 +30,7 @@ export async function runWhatsAppAuth(config: TraulConfig, accountName: string):
       body: JSON.stringify({ name: session }),
     });
 
-    if (!startResp.ok && startResp.status !== 409) {
+    if (!startResp.ok && startResp.status !== 409 && startResp.status !== 422) {
       const body = await startResp.text();
       console.error(`Failed to start session: ${startResp.status} ${body}`);
       process.exit(1);
@@ -51,7 +51,7 @@ export async function runWhatsAppAuth(config: TraulConfig, accountName: string):
 
   console.log("\nScan this QR code with WhatsApp on your phone:\n");
 
-  const qrResp = await fetch(`${url}/api/sessions/${session}/auth/qr`, { headers });
+  const qrResp = await fetch(`${url}/api/${session}/auth/qr?format=raw`, { headers });
   if (!qrResp.ok) {
     console.error(`Failed to get QR code: ${qrResp.status}`);
     process.exit(1);
@@ -60,10 +60,12 @@ export async function runWhatsAppAuth(config: TraulConfig, accountName: string):
   const qrData = await qrResp.json() as { value: string };
 
   try {
-    const { exec } = await import("child_process");
-    const { promisify } = await import("util");
-    const execAsync = promisify(exec);
-    await execAsync(`echo "${qrData.value}" | npx -y qrcode-terminal`);
+    const proc = Bun.spawn(["npx", "--yes", "qrcode-terminal"], {
+      stdin: new Blob([qrData.value + "\n"]),
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    await proc.exited;
   } catch {
     console.log("QR value (scan with a QR reader or open in browser):");
     console.log(`${url}/api/${session}/auth/qr?format=image`);
