@@ -1,6 +1,6 @@
 import type { TraulDB } from "../db/database";
 import { formatMessage, writeJSON } from "../lib/formatter";
-import { embed, vecToBytes } from "../lib/embeddings";
+import { embedQuery, vecToBytes } from "../lib/embeddings";
 
 export async function runSearch(
   db: TraulDB,
@@ -45,7 +45,7 @@ export async function runSearch(
     results = db.ftsSearchAll(ftsQuery, searchOpts);
   } else {
     try {
-      const vec = await embed(query);
+      const vec = await embedQuery(query);
       results = db.hybridSearchAll(vecToBytes(vec), ftsQuery, searchOpts);
       const { total_messages, embedded_messages } = db.getEmbeddingStats();
       const pct = total_messages > 0 ? Math.round((embedded_messages / total_messages) * 100) : 0;
@@ -53,7 +53,7 @@ export async function runSearch(
         console.warn(`search: hybrid mode — ${pct}% vector, ${100 - pct}% FTS`);
       }
     } catch {
-      console.warn("search: Ollama unavailable, falling back to FTS-only");
+      console.warn("search: embedding unavailable, falling back to FTS-only");
       results = db.ftsSearchAll(ftsQuery, searchOpts);
     }
   }
