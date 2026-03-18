@@ -163,12 +163,19 @@ async def cmd_list(limit: int, since: str = None):
         sys.stderr.flush()
         chats = []
         count = 0
+        consecutive_old = 0
+        CONSECUTIVE_OLD_THRESHOLD = 100  # Telethon pages internally in 100s
         async for d in client.iter_dialogs(limit=limit):
             count += 1
             if cutoff and d.date and d.date < cutoff:
-                sys.stderr.write(f"  Stopped at {count} dialogs (reached cutoff {since})\n")
-                sys.stderr.flush()
-                break
+                consecutive_old += 1
+                if consecutive_old >= CONSECUTIVE_OLD_THRESHOLD:
+                    sys.stderr.write(f"  Stopped at {count} dialogs ({CONSECUTIVE_OLD_THRESHOLD} consecutive old, cutoff {since})\n")
+                    sys.stderr.flush()
+                    break
+                continue  # skip this old dialog but keep scanning
+            else:
+                consecutive_old = 0  # reset counter on any new dialog
             if count % 100 == 0:
                 sys.stderr.write(f"  {count} dialogs...\n")
                 sys.stderr.flush()
