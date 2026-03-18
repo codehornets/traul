@@ -1,6 +1,6 @@
 {
   "name": "traul",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Personal Intelligence Engine — watches communication streams, identifies patterns, surfaces actionable insights",
   "license": "AGPL-3.0-only",
   "repository": {
