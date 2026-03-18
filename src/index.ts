@@ -13,6 +13,7 @@ import { runWhatsAppAuth } from "./commands/whatsapp-auth";
 import { runDaemonStart, runDaemonStop, runDaemonStatus } from "./commands/daemon";
 import { runSql, runSchema } from "./commands/sql";
 import { runGet } from "./commands/get";
+import { runReset } from "./commands/reset";
 import { runMigrations } from "./db/migrations";
 
 const config = loadConfig();
@@ -140,13 +141,21 @@ program
   });
 
 program
+  .command("reset")
+  .description("Reset a data layer (sync, chunks, embed, all)")
+  .argument("<layer>", "layer to reset: sync, chunks, embed, all")
+  .option("-s, --source <source>", "filter by source (for sync layer)")
+  .action(async (layer: string, options) => {
+    runReset(db, layer, options);
+    db.close();
+  });
+
+program
   .command("reset-embed")
-  .description("Drop all embeddings and recreate vec tables (run 'embed' after to regenerate)")
+  .description("(deprecated: use 'traul reset embed') Drop all embeddings")
   .action(async () => {
-    const { EMBED_DIMS } = await import("./lib/embeddings");
-    console.log(`Resetting vec tables to ${EMBED_DIMS} dimensions...`);
-    db.resetEmbeddings(EMBED_DIMS);
-    console.log("Done. Run 'traul embed' to regenerate embeddings.");
+    console.log("Note: 'reset-embed' is deprecated, use 'traul reset embed' instead.");
+    runReset(db, "embed", {});
     db.close();
   });
 
