@@ -91,8 +91,8 @@ describe("LlamaCpp wrapper", () => {
 
   it("embedQuery adds instruction prefix for Qwen model", async () => {
     let capturedText = "";
-    mockEmbeddingContext.getEmbeddingFor.mockImplementation((text: string) => {
-      capturedText = text;
+    mockEmbeddingContext.getEmbeddingFor.mockImplementation((...args: unknown[]) => {
+      capturedText = args[0] as string;
       return { vector: fakeVector };
     });
 
@@ -125,7 +125,7 @@ describe("LlamaCpp wrapper", () => {
     const skipped: number[] = [];
     const results = await llamaMod.embedDocBatch(
       ["ok", "bad", "ok"],
-      (idx) => skipped.push(idx),
+      (idx: number) => skipped.push(idx),
     );
     expect(results).toHaveLength(3);
     expect(results[0]).toBeInstanceOf(Float32Array);

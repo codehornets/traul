@@ -66,8 +66,9 @@ async function getContext(): Promise<LlamaEmbeddingContext> {
   if (!model) {
     const modelPath = await resolveModelFile(LLAMA_EMBED_MODEL, {
       directory: `${process.env.HOME}/.cache/traul/models`,
-      onProgress: ({ percent }) => {
-        process.stderr.write(`\rDownloading model: ${Math.round(percent)}%`);
+      onProgress: ({ totalSize, downloadedSize }) => {
+        const pct = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0;
+        process.stderr.write(`\rDownloading model: ${pct}%`);
       },
     });
     model = await llama.loadModel({ modelPath });
@@ -88,9 +89,13 @@ async function embedSingle(embCtx: LlamaEmbeddingContext, text: string): Promise
   try {
     const { vector } = await embCtx.getEmbeddingFor(truncate(text));
     return new Float32Array(vector);
-  } catch {
-    // Retry with progressive truncation
+  } catch (err) {
+    // Only retry with progressive truncation if the text is long enough to benefit
     for (const limit of TRUNCATE_LIMITS) {
+      if (text.length <= limit) {
+        // Text is already short — retrying won't help, rethrow original error
+        throw err;
+      }
       try {
         const { vector } = await embCtx.getEmbeddingFor(text.slice(0, limit));
         return new Float32Array(vector);
