@@ -13,10 +13,12 @@ import { runWhatsAppAuth } from "./commands/whatsapp-auth";
 import { runDaemonStart, runDaemonStop, runDaemonStatus } from "./commands/daemon";
 import { runSql, runSchema } from "./commands/sql";
 import { runGet } from "./commands/get";
+import { runMigrations } from "./db/migrations";
 
 const config = loadConfig();
 ensureDbDir(config.database.path);
 const db = new TraulDB(config.database.path);
+runMigrations(db);
 
 const program = new Command();
 
