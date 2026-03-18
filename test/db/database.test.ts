@@ -268,6 +268,23 @@ describe("TraulDB", () => {
     });
   });
 
+  describe("meta", () => {
+    it("returns null for missing key", () => {
+      expect(db.getMeta("nonexistent")).toBeNull();
+    });
+
+    it("stores and retrieves a value", () => {
+      db.setMeta("chunker_version", "1");
+      expect(db.getMeta("chunker_version")).toBe("1");
+    });
+
+    it("overwrites existing value", () => {
+      db.setMeta("chunker_version", "1");
+      db.setMeta("chunker_version", "2");
+      expect(db.getMeta("chunker_version")).toBe("2");
+    });
+  });
+
   describe("stats", () => {
     it("returns correct counts", () => {
       db.upsertMessage({
