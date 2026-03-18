@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { chunkText, shouldChunk } from "../../src/lib/chunker";
+import { chunkText, shouldChunk, CHUNKER_VERSION } from "../../src/lib/chunker";
 
 describe("shouldChunk", () => {
   it("returns false for short text", () => {
@@ -72,5 +72,12 @@ describe("chunkText", () => {
     for (const word of words) {
       expect(allChunkText).toContain(word);
     }
+  });
+});
+
+describe("CHUNKER_VERSION", () => {
+  it("exports a version string", () => {
+    expect(typeof CHUNKER_VERSION).toBe("string");
+    expect(CHUNKER_VERSION.length).toBeGreaterThan(0);
   });
 });
