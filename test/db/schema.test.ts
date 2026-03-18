@@ -45,4 +45,17 @@ describe("initializeDatabase", () => {
     expect(() => initializeDatabase(":memory:")).not.toThrow();
     db.close();
   });
+
+  it("creates traul_meta table", () => {
+    const db = initializeDatabase(":memory:");
+    const tables = db
+      .query<{ name: string }, []>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+      )
+      .all()
+      .map((r) => r.name);
+
+    expect(tables).toContain("traul_meta");
+    db.close();
+  });
 });

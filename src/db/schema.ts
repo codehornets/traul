@@ -117,6 +117,11 @@ const SCHEMA_SQL = `
     INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES ('delete', old.id, old.content);
     INSERT INTO chunks_fts(rowid, content) VALUES (new.id, new.content);
   END;
+
+  CREATE TABLE IF NOT EXISTS traul_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `;
 
 export function initializeDatabase(path: string): Database {
