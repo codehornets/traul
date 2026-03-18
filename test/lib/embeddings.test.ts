@@ -81,6 +81,10 @@ describe("embeddings — Ollama fallback", () => {
 
   afterEach(() => {
     restoreFetch();
+    // Restore llama mocks so they don't leak into other test files
+    mockLlama.embedDoc.mockImplementation(() => Promise.resolve(fakeVector));
+    mockLlama.embedQuery.mockImplementation(() => Promise.resolve(fakeVector));
+    mockLlama.embedDocBatch.mockImplementation(() => Promise.resolve([fakeVector, fakeVector2]));
   });
 
   it("embed() falls back to Ollama when llama throws", async () => {
