@@ -817,6 +817,19 @@ export class TraulDB {
     this.db.run("DELETE FROM sync_cursors WHERE source = ? AND key = ?", [source, key]);
   }
 
+  resetSyncCursors(source?: string): void {
+    if (source) {
+      this.db.run("DELETE FROM sync_cursors WHERE source = ?", [source]);
+    } else {
+      this.db.run("DELETE FROM sync_cursors");
+    }
+  }
+
+  resetChunks(): void {
+    this.db.run("DELETE FROM vec_chunks");
+    this.db.run("DELETE FROM chunks");
+  }
+
   getMeta(key: string): string | null {
     const row = this.db
       .query<{ value: string }, [string]>(

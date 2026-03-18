@@ -268,6 +268,76 @@ describe("TraulDB", () => {
     });
   });
 
+  describe("resetSyncCursors", () => {
+    it("clears all cursors for a source", () => {
+      db.setSyncCursor("markdown", "file:a.md", "hash1");
+      db.setSyncCursor("markdown", "file:b.md", "hash2");
+      db.setSyncCursor("slack", "channel:C1", "ts1");
+
+      db.resetSyncCursors("markdown");
+
+      expect(db.getSyncCursor("markdown", "file:a.md")).toBeNull();
+      expect(db.getSyncCursor("markdown", "file:b.md")).toBeNull();
+      expect(db.getSyncCursor("slack", "channel:C1")).toBe("ts1");
+    });
+
+    it("clears all cursors when no source given", () => {
+      db.setSyncCursor("markdown", "file:a.md", "hash1");
+      db.setSyncCursor("slack", "channel:C1", "ts1");
+
+      db.resetSyncCursors();
+
+      expect(db.getSyncCursor("markdown", "file:a.md")).toBeNull();
+      expect(db.getSyncCursor("slack", "channel:C1")).toBeNull();
+    });
+  });
+
+  describe("resetChunks", () => {
+    it("deletes all chunks and their embeddings", () => {
+      db.upsertMessage({
+        source: "markdown",
+        source_id: "md:abc",
+        channel_name: "notes",
+        author_name: "doc",
+        content: "x".repeat(3000),
+        sent_at: 1700000000,
+      });
+
+      const msg = db.db
+        .query<{ id: number }, [string]>("SELECT id FROM messages WHERE source_id = ?")
+        .get("md:abc");
+
+      db.replaceChunks(msg!.id, [
+        { index: 0, content: "chunk 0", embeddingInput: "chunk 0" },
+        { index: 1, content: "chunk 1", embeddingInput: "chunk 1" },
+      ]);
+
+      const chunksBefore = db.getChunkEmbeddingStats();
+      expect(chunksBefore.total_chunks).toBe(2);
+
+      db.resetChunks();
+
+      const chunksAfter = db.getChunkEmbeddingStats();
+      expect(chunksAfter.total_chunks).toBe(0);
+    });
+
+    it("does not delete messages", () => {
+      db.upsertMessage({
+        source: "markdown",
+        source_id: "md:abc",
+        channel_name: "notes",
+        author_name: "doc",
+        content: "some content",
+        sent_at: 1700000000,
+      });
+
+      db.resetChunks();
+
+      const stats = db.getStats();
+      expect(stats.total_messages).toBe(1);
+    });
+  });
+
   describe("meta", () => {
     it("returns null for missing key", () => {
       expect(db.getMeta("nonexistent")).toBeNull();
