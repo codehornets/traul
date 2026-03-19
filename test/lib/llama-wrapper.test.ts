@@ -1,5 +1,14 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 
+// Check if node-llama-cpp native binary is available
+let llamaAvailable = false;
+try {
+  await import("node-llama-cpp");
+  llamaAvailable = true;
+} catch {
+  // native binary not available (CI)
+}
+
 // --- Mock node-llama-cpp at top level before any imports ---
 
 const fakeVector = new Float32Array(1024).fill(0.1);
@@ -26,9 +35,10 @@ mock.module("node-llama-cpp", () => ({
 }));
 
 // Import after mock setup — gets real llama.ts with mocked node-llama-cpp
-const { embedDoc, embedQuery, embedDocBatch, _resetForTesting } = await import("../../src/lib/llama");
+const llama = await import("../../src/lib/llama");
+const { embedDoc, embedQuery, embedDocBatch, _resetForTesting } = llama;
 
-describe("LlamaCpp wrapper", () => {
+describe.if(llamaAvailable)("LlamaCpp wrapper", () => {
   beforeEach(() => {
     _resetForTesting?.();
     mockEmbeddingContext.getEmbeddingFor.mockImplementation(() => ({ vector: fakeVector }));
