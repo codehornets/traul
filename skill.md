@@ -163,6 +163,19 @@ Structured overview with three sections:
 2. **Stats** — total messages, channels, contacts, active signals
 3. **Volume** — last 7 days message bar chart
 
+### `traul reset`
+
+Reset a data layer to force regeneration. Useful when you need to re-sync, re-chunk, or re-embed data.
+
+| Subcommand | Description |
+|------------|-------------|
+| `traul reset sync [--source <source>]` | Clear sync cursors; full refetch on next sync. Optional `--source` flag filters to a specific connector (e.g., `markdown`, `slack`). |
+| `traul reset chunks` | Delete all chunks and embeddings; rechunk on next sync. |
+| `traul reset embed` | Drop and recreate vector tables; re-embed with `traul embed`. |
+| `traul reset all` | Reset everything: sync cursors + chunks + embeddings. |
+
+**Auto-migration:** Traul automatically detects version changes on startup. If the chunking algorithm or embedding model/dimensions change between versions, affected data layers are reset automatically. No manual action needed after upgrading.
+
 ### Global Options
 
 | Option | Description |

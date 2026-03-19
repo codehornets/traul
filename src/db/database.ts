@@ -817,6 +817,35 @@ export class TraulDB {
     this.db.run("DELETE FROM sync_cursors WHERE source = ? AND key = ?", [source, key]);
   }
 
+  resetSyncCursors(source?: string): void {
+    if (source) {
+      this.db.run("DELETE FROM sync_cursors WHERE source = ?", [source]);
+    } else {
+      this.db.run("DELETE FROM sync_cursors");
+    }
+  }
+
+  resetChunks(): void {
+    this.db.run("DELETE FROM vec_chunks");
+    this.db.run("DELETE FROM chunks");
+  }
+
+  getMeta(key: string): string | null {
+    const row = this.db
+      .query<{ value: string }, [string]>(
+        "SELECT value FROM traul_meta WHERE key = ?"
+      )
+      .get(key);
+    return row?.value ?? null;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.db.run(
+      "INSERT INTO traul_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      [key, value]
+    );
+  }
+
   close(): void {
     this.db.close();
   }
