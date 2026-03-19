@@ -14,7 +14,7 @@ allowed-tools:
 
 CLI tool that watches communication streams (Slack, Telegram, Discord, Linear, Gmail, Claude Code sessions, Markdown files, WhatsApp), indexes messages, detects patterns via signals, and surfaces actionable insights.
 
-**Runtime:** Bun + TypeScript | **DB:** SQLite (WAL mode, FTS5, sqlite-vec) | **Embeddings:** Ollama + nomic-embed-text | **Version:** 0.1.0
+**Runtime:** Bun + TypeScript | **DB:** SQLite (WAL mode, FTS5, sqlite-vec) | **Embeddings:** node-llama-cpp (Qwen3-Embedding-0.6B), Ollama fallback | **Version:** 0.2.0
 
 **Project:** `/Users/dandaka/projects/traul`
 
@@ -39,10 +39,10 @@ Sync messages from communication sources incrementally.
 
 ### `traul search <query>`
 
-Hybrid search combining vector similarity (semantic) and FTS5 keyword matching with Reciprocal Rank Fusion. Falls back to FTS-only if Ollama is unavailable.
+Hybrid search combining vector similarity (semantic) and FTS5 keyword matching with Reciprocal Rank Fusion. Falls back to FTS-only if embedding is unavailable.
 
 **Search modes:**
-- **Hybrid (default)** — best for multi-word and exploratory queries. Finds semantically related messages even when exact keywords don't appear. Requires Ollama running with `snowflake-arctic-embed2`. Prints coverage ratio to stderr (e.g. `88% vector, 12% FTS`). Falls back to FTS-only with a warning if Ollama is unavailable.
+- **Hybrid (default)** — best for multi-word and exploratory queries. Finds semantically related messages even when exact keywords don't appear. Uses node-llama-cpp with Qwen3-Embedding-0.6B (auto-downloads ~639MB model on first use). Falls back to Ollama, then FTS-only. Prints coverage ratio to stderr (e.g. `88% vector, 12% FTS`).
 - **FTS-only (`--fts`)** — keyword matching with BM25 ranking. Faster, but requires ALL terms to match (implicit AND). Brittle with multi-word queries, especially combined with source/channel filters.
 - **OR mode (`--or`)** — joins search terms with OR instead of AND. Works with both `--fts` and hybrid. Use for broad exploratory queries where any term is relevant.
 - **Substring (`--like`)** — bypasses FTS entirely, uses SQL LIKE. Useful for exact phrases that FTS tokenization breaks (e.g. "how do I").
@@ -299,7 +299,7 @@ SQL-based pattern detection engine.
 |-------|---------|
 | `messages` | Primary message store (source, channel, author, content, sent_at, metadata JSON) |
 | `messages_fts` | FTS5 virtual table (content, author_name, channel_name) with porter tokenizer |
-| `vec_messages` | sqlite-vec virtual table for vector embeddings (float[768]) |
+| `vec_messages` | sqlite-vec virtual table for vector embeddings (float[1024]) |
 | `contacts` | Unified contact directory (display_name unique) |
 | `contact_identities` | Multi-source user mapping (source + source_user_id unique) |
 | `sync_cursors` | Incremental sync state per source+key |

@@ -1,16 +1,31 @@
+import * as llama from "./llama";
+
+// --- Constants ---
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const EMBED_MODEL = process.env.TRAUL_EMBED_MODEL ?? "snowflake-arctic-embed2";
+const OLLAMA_MODEL = "snowflake-arctic-embed2"; // Used only for Ollama fallback path
 const EMBED_DIMS = 1024;
 const BATCH_SIZE = 50;
-
-export { EMBED_DIMS, EMBED_MODEL, BATCH_SIZE, MAX_TEXT_LENGTH };
-
-// snowflake-arctic-embed2 context is 8192 tokens.
-// Non-Latin (Cyrillic, CJK) text uses ~2-4 tokens per char.
-// Pre-truncate texts before sending to Ollama to avoid massive payloads.
 const MAX_TEXT_LENGTH = 4000;
-// Further truncation steps for retry on context overflow.
 const TRUNCATE_LIMITS = [2000, 1000];
+
+export { EMBED_DIMS, BATCH_SIZE, MAX_TEXT_LENGTH };
+export const EMBED_MODEL = llama.LLAMA_EMBED_MODEL;
+
+// --- Backend selection ---
+let useLlama = true;
+try {
+  if (!llama.embedDoc) useLlama = false;
+} catch {
+  useLlama = false;
+  console.warn("llama: node-llama-cpp unavailable, falling back to Ollama");
+}
+
+/** Reset fallback state for testing. */
+export function _resetFallbackForTesting(): void {
+  useLlama = true;
+}
+
+// --- Ollama HTTP backend (fallback) ---
 
 async function tryEmbedBatch(
   texts: string[]
@@ -21,7 +36,7 @@ async function tryEmbedBatch(
     const res = await fetch(`${OLLAMA_URL}/api/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: EMBED_MODEL, input: texts, truncate: true }),
+      body: JSON.stringify({ model: OLLAMA_MODEL, input: texts, truncate: true }),
       signal: controller.signal,
     });
 
@@ -42,7 +57,7 @@ function isContextOverflow(error: string): boolean {
   return error.includes("input length exceeds") || error.includes("context length");
 }
 
-export async function embed(text: string): Promise<Float32Array> {
+async function ollamaEmbed(text: string): Promise<Float32Array> {
   const input = text.length > MAX_TEXT_LENGTH ? text.slice(0, MAX_TEXT_LENGTH) : text;
   const result = await tryEmbedBatch([input]);
   if (result.ok) return new Float32Array(result.embeddings[0]);
@@ -59,7 +74,7 @@ export async function embed(text: string): Promise<Float32Array> {
   throw new Error(`Message too long to embed even at ${TRUNCATE_LIMITS.at(-1)} chars`);
 }
 
-export async function embedBatch(
+async function ollamaEmbedBatch(
   texts: string[],
   onSkip?: (index: number, error: string) => void
 ): Promise<(Float32Array | null)[]> {
@@ -91,6 +106,52 @@ export async function embedBatch(
     }
   }
   return results;
+}
+
+// --- Public API ---
+
+function truncate(text: string): string {
+  return text.length > MAX_TEXT_LENGTH ? text.slice(0, MAX_TEXT_LENGTH) : text;
+}
+
+export async function embed(text: string): Promise<Float32Array> {
+  if (useLlama) {
+    try {
+      return await llama.embedDoc(truncate(text));
+    } catch (err) {
+      console.warn(`llama: embedding failed, falling back to Ollama: ${err}`);
+      useLlama = false;
+    }
+  }
+  return ollamaEmbed(text);
+}
+
+export async function embedQuery(text: string): Promise<Float32Array> {
+  if (useLlama) {
+    try {
+      return await llama.embedQuery(truncate(text));
+    } catch (err) {
+      console.warn(`llama: embedding failed, falling back to Ollama: ${err}`);
+      useLlama = false;
+    }
+  }
+  return ollamaEmbed(text);
+}
+
+export async function embedBatch(
+  texts: string[],
+  onSkip?: (index: number, error: string) => void
+): Promise<(Float32Array | null)[]> {
+  if (useLlama) {
+    try {
+      const truncated = texts.map(truncate);
+      return await llama.embedDocBatch(truncated, onSkip);
+    } catch (err) {
+      console.warn(`llama: batch embedding failed, falling back to Ollama: ${err}`);
+      useLlama = false;
+    }
+  }
+  return ollamaEmbedBatch(texts, onSkip);
 }
 
 export function vecToBytes(vec: Float32Array): Uint8Array {

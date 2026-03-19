@@ -1,58 +1,116 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { embedBatch, BATCH_SIZE } from "../../src/lib/embeddings";
 
-// We mock fetch to avoid hitting Ollama in tests
+const fakeVector = new Float32Array(1024).fill(0.42);
+const fakeVector2 = new Float32Array(1024).fill(0.84);
+
+const mockLlama = {
+  embedDoc: mock(() => Promise.resolve(fakeVector)),
+  embedQuery: mock(() => Promise.resolve(fakeVector)),
+  embedDocBatch: mock(() => Promise.resolve([fakeVector, fakeVector2])),
+  LLAMA_EMBED_MODEL: "hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf",
+};
+
+mock.module("../../src/lib/llama", () => mockLlama);
+
+const { embed, embedQuery, embedBatch, vecToBytes, MAX_TEXT_LENGTH, _resetFallbackForTesting } = await import("../../src/lib/embeddings");
+
 const originalFetch = globalThis.fetch;
-
 function mockFetch(handler: (url: string, opts: RequestInit) => Response | Promise<Response>) {
   globalThis.fetch = mock(handler as typeof fetch) as unknown as typeof fetch;
 }
-
 function restoreFetch() {
   globalThis.fetch = originalFetch;
 }
 
-function fakeEmbedding(dims: number = 1024): number[] {
-  return Array.from({ length: dims }, () => Math.random());
-}
-
 function ollamaResponse(count: number) {
   return Response.json({
-    embeddings: Array.from({ length: count }, () => fakeEmbedding()),
+    embeddings: Array.from({ length: count }, () => Array.from({ length: 1024 }, () => Math.random())),
   });
 }
 
-function ollamaError(error: string) {
-  return Response.json({ error });
-}
-
-describe("embedBatch", () => {
+describe("embeddings — llama primary path", () => {
   beforeEach(() => {
+    _resetFallbackForTesting();
+    mockLlama.embedDoc.mockClear();
+    mockLlama.embedQuery.mockClear();
+    mockLlama.embedDocBatch.mockClear();
+    mockLlama.embedDoc.mockImplementation(() => Promise.resolve(fakeVector));
+    mockLlama.embedQuery.mockImplementation(() => Promise.resolve(fakeVector));
+    mockLlama.embedDocBatch.mockImplementation(() => Promise.resolve([fakeVector, fakeVector2]));
+  });
+
+  it("embed() calls llama.embedDoc and returns Float32Array", async () => {
+    const result = await embed("hello");
+    expect(result).toBeInstanceOf(Float32Array);
+    expect(result.length).toBe(1024);
+    expect(mockLlama.embedDoc).toHaveBeenCalledWith("hello");
+  });
+
+  it("embedQuery() calls llama.embedQuery and returns Float32Array", async () => {
+    const result = await embedQuery("search term");
+    expect(result).toBeInstanceOf(Float32Array);
+    expect(mockLlama.embedQuery).toHaveBeenCalledWith("search term");
+  });
+
+  it("embedBatch() calls llama.embedDocBatch", async () => {
+    const results = await embedBatch(["a", "b"]);
+    expect(results).toHaveLength(2);
+    expect(mockLlama.embedDocBatch).toHaveBeenCalled();
+  });
+
+  it("embed() pre-truncates text > MAX_TEXT_LENGTH", async () => {
+    const longText = "x".repeat(5000);
+    await embed(longText);
+    const calledWith = (mockLlama.embedDoc.mock.calls as unknown[][])[0][0] as string;
+    expect(calledWith.length).toBeLessThanOrEqual(MAX_TEXT_LENGTH);
+  });
+
+  it("vecToBytes produces correct Uint8Array", () => {
+    const vec = new Float32Array([1.0, 2.0]);
+    const bytes = vecToBytes(vec);
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.byteLength).toBe(8);
+  });
+});
+
+describe("embeddings — Ollama fallback", () => {
+  beforeEach(() => {
+    _resetFallbackForTesting();
     restoreFetch();
   });
 
   afterEach(() => {
     restoreFetch();
+    // Restore llama mocks so they don't leak into other test files
+    mockLlama.embedDoc.mockImplementation(() => Promise.resolve(fakeVector));
+    mockLlama.embedQuery.mockImplementation(() => Promise.resolve(fakeVector));
+    mockLlama.embedDocBatch.mockImplementation(() => Promise.resolve([fakeVector, fakeVector2]));
   });
 
-  it("should not send texts longer than 4000 chars to Ollama", async () => {
-    const sentTexts: string[][] = [];
+  it("embed() falls back to Ollama when llama throws", async () => {
+    mockLlama.embedDoc.mockImplementation(() => { throw new Error("llama unavailable"); });
 
+    mockFetch(async (_url, opts) => {
+      const body = JSON.parse(opts.body as string);
+      return ollamaResponse(body.input.length);
+    });
+
+    const result = await embed("hello");
+    expect(result).toBeInstanceOf(Float32Array);
+    expect(result.length).toBe(1024);
+  });
+
+  it("embedBatch() falls back to Ollama and truncates", async () => {
+    mockLlama.embedDocBatch.mockImplementation(() => { throw new Error("llama unavailable"); });
+
+    const sentTexts: string[][] = [];
     mockFetch(async (_url, opts) => {
       const body = JSON.parse(opts.body as string);
       sentTexts.push(body.input);
       return ollamaResponse(body.input.length);
     });
 
-    const shortText = "hello world";
-    const longText = "x".repeat(5000);
-
-    const results = await embedBatch([shortText, longText]);
-
-    // Both should get embeddings
-    expect(results).toHaveLength(2);
-
-    // All texts sent to Ollama should be <= 4000 chars
+    await embedBatch(["short", "x".repeat(5000)]);
     for (const batch of sentTexts) {
       for (const text of batch) {
         expect(text.length).toBeLessThanOrEqual(4000);
@@ -60,92 +118,17 @@ describe("embedBatch", () => {
     }
   });
 
-  it("should not send texts longer than CHUNK_THRESHOLD to Ollama", async () => {
-    const sentTexts: string[][] = [];
+  it("Ollama fallback uses snowflake-arctic-embed2 model name, not HF URI", async () => {
+    mockLlama.embedDoc.mockImplementation(() => { throw new Error("llama unavailable"); });
 
+    let sentModel = "";
     mockFetch(async (_url, opts) => {
       const body = JSON.parse(opts.body as string);
-      sentTexts.push(body.input);
+      sentModel = body.model;
       return ollamaResponse(body.input.length);
     });
 
-    // 50K char message — should be truncated before sending
-    const hugeText = "word ".repeat(10000);
-    const results = await embedBatch([hugeText]);
-
-    expect(results).toHaveLength(1);
-
-    for (const batch of sentTexts) {
-      for (const text of batch) {
-        expect(text.length).toBeLessThanOrEqual(4000);
-      }
-    }
-  });
-
-  it("should not send multi-megabyte messages to Ollama", async () => {
-    let totalPayloadSize = 0;
-
-    mockFetch(async (_url, opts) => {
-      const bodyStr = opts.body as string;
-      totalPayloadSize += bodyStr.length;
-      const body = JSON.parse(bodyStr);
-      return ollamaResponse(body.input.length);
-    });
-
-    // Simulate the real-world case: messages up to 7MB
-    const texts = [
-      "short message",
-      "a".repeat(100_000),   // 100KB
-      "b".repeat(1_000_000), // 1MB
-    ];
-
-    await embedBatch(texts);
-
-    // Total payload to Ollama should be reasonable (not megabytes)
-    expect(totalPayloadSize).toBeLessThan(100_000);
-  });
-
-  it("should truncate long texts but still return embeddings for them", async () => {
-    mockFetch(async (_url, opts) => {
-      const body = JSON.parse(opts.body as string);
-      return ollamaResponse(body.input.length);
-    });
-
-    const texts = [
-      "short",
-      "x".repeat(50_000),
-    ];
-
-    const results = await embedBatch(texts);
-
-    expect(results).toHaveLength(2);
-    expect(results[0]).not.toBeNull();
-    expect(results[1]).not.toBeNull();
-  });
-
-  it("should handle a batch where all texts are long", async () => {
-    const sentTexts: string[][] = [];
-
-    mockFetch(async (_url, opts) => {
-      const body = JSON.parse(opts.body as string);
-      sentTexts.push(body.input);
-      return ollamaResponse(body.input.length);
-    });
-
-    const texts = Array.from({ length: 5 }, (_, i) =>
-      `message ${i} `.repeat(2000)
-    );
-
-    const results = await embedBatch(texts);
-
-    expect(results).toHaveLength(5);
-    results.forEach((r) => expect(r).not.toBeNull());
-
-    // No text sent to Ollama should exceed 4000 chars
-    for (const batch of sentTexts) {
-      for (const text of batch) {
-        expect(text.length).toBeLessThanOrEqual(4000);
-      }
-    }
+    await embed("hello");
+    expect(sentModel).toBe("snowflake-arctic-embed2");
   });
 });
