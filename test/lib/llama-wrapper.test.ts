@@ -22,6 +22,7 @@ const mockLlamaInstance = {
 mock.module("node-llama-cpp", () => ({
   getLlama: mock(() => Promise.resolve(mockLlamaInstance)),
   resolveModelFile: mock(() => Promise.resolve("/fake/model.gguf")),
+  LlamaLogLevel: { disabled: "disabled", fatal: "fatal", error: "error", warn: "warn", info: "info", log: "log", debug: "debug" },
 }));
 
 // Import after mock setup — gets real llama.ts with mocked node-llama-cpp
