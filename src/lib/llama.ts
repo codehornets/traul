@@ -1,21 +1,6 @@
 import { getLlama, LlamaLogLevel, resolveModelFile, type Llama, type LlamaModel, type LlamaEmbeddingContext } from "node-llama-cpp";
-
-// --- Formatting helpers (pure, no model dependency) ---
-
-export function isQwenEmbeddingModel(uri: string): boolean {
-  return /qwen.*embed/i.test(uri);
-}
-
-export function formatQuery(text: string, modelUri: string): string {
-  if (isQwenEmbeddingModel(modelUri)) {
-    return `Instruct: Retrieve relevant documents for the given query\nQuery: ${text}`;
-  }
-  return text;
-}
-
-export function formatDoc(text: string): string {
-  return text;
-}
+import { formatQuery, formatDoc } from "./llama-format";
+export { isQwenEmbeddingModel, formatQuery, formatDoc } from "./llama-format";
 
 // --- Singleton model wrapper ---
 

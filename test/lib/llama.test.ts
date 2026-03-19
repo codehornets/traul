@@ -1,13 +1,5 @@
-import { describe, it, expect, mock } from "bun:test";
-
-// Mock node-llama-cpp so importing llama.ts doesn't fail on CI (no native binary)
-mock.module("node-llama-cpp", () => ({
-  getLlama: mock(() => Promise.resolve({})),
-  resolveModelFile: mock(() => Promise.resolve("/fake/model.gguf")),
-  LlamaLogLevel: { disabled: "disabled", fatal: "fatal", error: "error", warn: "warn", info: "info", log: "log", debug: "debug" },
-}));
-
-const { isQwenEmbeddingModel, formatQuery, formatDoc } = await import("../../src/lib/llama");
+import { describe, it, expect } from "bun:test";
+import { isQwenEmbeddingModel, formatQuery, formatDoc } from "../../src/lib/llama-format";
 
 const QWEN_URI = "hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
 const OTHER_URI = "hf:BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5-q8_0.gguf";
