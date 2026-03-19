@@ -1,4 +1,4 @@
-import { getLlama, resolveModelFile, type Llama, type LlamaModel, type LlamaEmbeddingContext } from "node-llama-cpp";
+import { getLlama, LlamaLogLevel, resolveModelFile, type Llama, type LlamaModel, type LlamaEmbeddingContext } from "node-llama-cpp";
 
 // --- Formatting helpers (pure, no model dependency) ---
 
@@ -60,7 +60,7 @@ async function getContext(): Promise<LlamaEmbeddingContext> {
   }
 
   if (!llama) {
-    llama = await getLlama();
+    llama = await getLlama({ logLevel: LlamaLogLevel.error });
   }
 
   if (!model) {
