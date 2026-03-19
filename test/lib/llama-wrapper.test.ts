@@ -1,18 +1,12 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 
-// These tests require the node-llama-cpp native binary to be installed.
-// On CI (Ubuntu), the binary isn't available and mock.module can't intercept
-// native module resolution. Skip the entire file gracefully.
+// Bun's mock.module doesn't reliably intercept node-llama-cpp's native binary
+// resolution on CI (Linux). Skip these integration tests in CI — the pure
+// formatting helpers (llama.test.ts) and Ollama fallback (embeddings.test.ts)
+// provide coverage there. Same pattern as qmd's describe.skipIf(!!process.env.CI).
+const isCI = !!process.env.CI;
 
-let llamaAvailable = false;
-try {
-  await import("node-llama-cpp");
-  llamaAvailable = true;
-} catch {
-  // native binary not available
-}
-
-if (llamaAvailable) {
+if (!isCI) {
   const fakeVector = new Float32Array(1024).fill(0.1);
   const fakeVector2 = new Float32Array(1024).fill(0.2);
 
@@ -123,5 +117,5 @@ if (llamaAvailable) {
     });
   });
 } else {
-  it.skip("LlamaCpp wrapper tests require native binary", () => {});
+  it.skip("LlamaCpp wrapper tests skipped in CI", () => {});
 }
