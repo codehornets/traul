@@ -48,10 +48,16 @@ export function runMigrations(db: TraulDB): MigrationResult {
     result.embeddingsReset = true;
   }
 
-  // Update stored values
-  db.setMeta("chunker_version", CHUNKER_VERSION);
-  db.setMeta("embed_model", EMBED_MODEL);
-  db.setMeta("embed_dims", currentDims);
+  // Update stored values only if changed (avoid unnecessary writes that cause SQLITE_BUSY)
+  if (storedChunkerVersion !== CHUNKER_VERSION) {
+    db.setMeta("chunker_version", CHUNKER_VERSION);
+  }
+  if (storedEmbedModel !== EMBED_MODEL) {
+    db.setMeta("embed_model", EMBED_MODEL);
+  }
+  if (storedEmbedDims !== currentDims) {
+    db.setMeta("embed_dims", currentDims);
+  }
 
   return result;
 }
